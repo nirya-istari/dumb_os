@@ -1,12 +1,12 @@
 // qemu.rs
 
 #[derive(Copy, Clone)]
-pub enum ExitStatusCode {
+pub enum ExitCode {
     Success = 0x10,
     Failed = 0x11,
 }
 
-pub fn exit_qemu(exit_code: ExitStatusCode) {
+pub fn exit_qemu(exit_code: ExitCode) {
     use x86_64::instructions::port::Port;
 
     unsafe {
