@@ -11,6 +11,6 @@ pub fn exit_qemu(exit_code: ExitCode) {
 
     unsafe {
         let mut port = Port::new(0xf4);
-        port.write(exit_code as u32);        
+        port.write(exit_code as u32);
     }
 }

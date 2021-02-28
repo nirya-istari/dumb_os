@@ -147,7 +147,6 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-
 #[test_case]
 fn test_println() {
     println!("Hello, world");
