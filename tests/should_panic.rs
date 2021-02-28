@@ -6,7 +6,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 use core::panic::PanicInfo;
-use dumb_os::{println, serial_print, serial_println, qemu, Testable};
+use dumb_os::{serial_print, serial_println, qemu};
 use qemu::{exit_qemu, ExitCode};
 
 #[no_mangle]

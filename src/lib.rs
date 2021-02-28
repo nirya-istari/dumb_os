@@ -9,14 +9,15 @@
 
 use core::panic::PanicInfo;
 
-// defines println! must be first.
-pub mod irq;
+pub mod vga_buffer;
 pub mod qemu;
 pub mod serial;
-pub mod vga_buffer;
+pub mod irq;
+pub mod gdt;
 
 pub fn init() {
-    irq::init_idt();
+    gdt::init();
+    irq::init();
 }
 
 pub trait Testable {
