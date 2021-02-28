@@ -18,6 +18,10 @@ pub mod gdt;
 pub fn init() {
     gdt::init();
     irq::init();
+    unsafe {
+        irq::PICS.lock().initialize()
+    };
+    x86_64::instructions::interrupts::enable();
 }
 
 pub trait Testable {
@@ -47,7 +51,7 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     qemu::exit_qemu(qemu::ExitCode::Failed);
-    loop {}
+    halt();
 }
 
 pub fn halt() -> ! {

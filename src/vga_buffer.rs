@@ -4,6 +4,7 @@ use core::fmt::{self, Write};
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
+use x86_64::instructions::interrupts;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,8 +133,10 @@ impl Write for Writer {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    let mut guard = WRITER.lock();
-    guard.write_fmt(args).unwrap();
+    interrupts::without_interrupts(|| {
+        let mut guard = WRITER.lock();
+        guard.write_fmt(args).unwrap();
+    });
 }
 
 #[macro_export]
@@ -160,11 +163,13 @@ fn test_println_many() {
 }
 
 #[test_case]
-fn tets_println_output() {
-    let s = "Some test string that fits on a single line";
-    println!("{}", s);
-    for (i, c) in s.chars().enumerate() {
-        let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
-        assert_eq!(char::from(screen_char.ascii_char), c);
-    }
+fn test_println_output() {
+    interrupts::without_interrupts(|| {
+        let s = "Some test string that fits on a single line";
+        println!("{}", s);
+        for (i, c) in s.chars().enumerate() {
+            let screen_char = WRITER.lock().buffer.chars[BUFFER_HEIGHT - 2][i].read();
+            assert_eq!(char::from(screen_char.ascii_char), c);
+        }
+    })
 }

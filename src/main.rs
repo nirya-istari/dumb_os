@@ -7,7 +7,7 @@
 #![reexport_test_harness_main = "test_main"]
 
 use core::panic::PanicInfo;
-use dumb_os::println;
+use dumb_os::{print, println};
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -19,7 +19,8 @@ pub extern "C" fn _start() -> ! {
     test_main();
 
     println!("It did not crash");
-    loop {}
+
+    dumb_os::halt();
 }
 
 /// This function is called on panic.
@@ -27,7 +28,7 @@ pub extern "C" fn _start() -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("{}", info);
-    loop {}
+    dumb_os::halt();
 }
 
 #[cfg(test)]
