@@ -1,9 +1,11 @@
 // irq.rs
 
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+use x86_64::instructions::port::Port;
 use lazy_static::lazy_static;
 use pic8259_simple::ChainedPics;
 use spin;
+use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 
 use crate::{gdt, print, println};
 
@@ -19,6 +21,9 @@ lazy_static! {
 
         idt[InterruptIndex::Timer.as_usize()]
             .set_handler_fn(timer_interrupt_handler);
+
+        idt[InterruptIndex::Keyboard.as_usize()]
+            .set_handler_fn(keyboard_interrupt_handler);
         
         idt
     };
@@ -46,13 +51,37 @@ extern "x86-interrupt" fn double_fault_handler(
 extern "x86-interrupt" fn timer_interrupt_handler(
     _stack_frame: &mut InterruptStackFrame)
 {
-    print!(".");
+    // print!(".");
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
 }
 
+extern "x86-interrupt" fn keyboard_interrupt_handler(
+    _stack_frame: &mut InterruptStackFrame)
+{
+    
+    // Always take your locks together.
+    let mut pics = PICS.lock();
+    let mut keyboard = KEYBOARD.lock();
+    unsafe {
+        let mut port: Port<u8> = Port::new(0x60);
+
+        let scancode = port.read();
+        if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
+            if let Some(key) = keyboard.process_keyevent(key_event) {
+                match key {
+                    DecodedKey::Unicode(character) => print!("{}", character),
+                    DecodedKey::RawKey(key) => print!("{:?}", key),
+                }
+            }
+        }
+        
+
+        pics.notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+    }
+}
 
 // PICS
 
@@ -61,6 +90,11 @@ pub const PIC2_OFFSET: u8 = PIC1_OFFSET + 8;
 
 pub static PICS: spin::Mutex<ChainedPics> =
     spin::Mutex::new(unsafe { ChainedPics::new(PIC1_OFFSET, PIC2_OFFSET) });
+
+lazy_static! {
+    static ref KEYBOARD: spin::Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> =
+        spin::Mutex::new(Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore));
+}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
