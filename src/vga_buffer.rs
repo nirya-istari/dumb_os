@@ -1,6 +1,9 @@
 // vga_buffer.rs
 
-use core::fmt::{self, Write};
+use core::{
+    fmt::{self, Write},
+    mem::swap,
+};
 use lazy_static::lazy_static;
 use spin::Mutex;
 use volatile::Volatile;
@@ -45,6 +48,8 @@ struct BufferChar {
     color_code: ColorCode,
 }
 
+// Status bar on actual first line.
+const FIRST_LINE: usize = 1;
 const BUFFER_HEIGHT: usize = 25;
 const BUFFER_WIDTH: usize = 80;
 
@@ -55,7 +60,9 @@ struct Buffer {
 
 pub struct Writer {
     column_position: usize,
+    row_position: usize,
     color_code: ColorCode,
+    ticks: u64,
     buffer: &'static mut Buffer,
 }
 
@@ -65,11 +72,43 @@ lazy_static! {
 
 impl Writer {
     unsafe fn init() -> Writer {
-        Writer {
+        let mut writer = Writer {
             column_position: 0,
+            row_position: BUFFER_HEIGHT - 1,
             color_code: ColorCode::new(Color::Yellow, Color::Black),
+            ticks: 0,
             buffer: { &mut *(0xb8000 as *mut Buffer) },
+        };
+
+        for row in 0..FIRST_LINE {
+            for cell in writer.buffer.chars[row].iter_mut() {
+                cell.write(BufferChar {
+                    ascii_char: b' ',
+                    color_code: ColorCode::new(Color::Black, Color::Yellow),
+                });
+            }
         }
+
+        writer.update_status_line();
+
+        writer
+    }
+
+    unsafe fn update_status_line(&mut self) {
+        let mut orig_row_positon = 0;
+        let mut orig_column_position = 0;
+        let mut orig_color_code = ColorCode::new(Color::Black, Color::Yellow);
+        swap(&mut orig_row_positon, &mut self.row_position);
+        swap(&mut orig_column_position, &mut self.column_position);
+        swap(&mut orig_color_code, &mut self.color_code);
+
+        // TODO: make this not go over line count.
+        let ticks = self.ticks;
+        write!(self, "tick: {}", ticks).ok();
+
+        swap(&mut orig_row_positon, &mut self.row_position);
+        swap(&mut orig_column_position, &mut self.column_position);
+        swap(&mut orig_color_code, &mut self.color_code);
     }
 
     pub fn write_byte(&mut self, byte: u8) {
@@ -80,7 +119,7 @@ impl Writer {
                     self.new_line();
                 }
 
-                let row = BUFFER_HEIGHT - 1;
+                let row = self.row_position;
                 let col = self.column_position;
 
                 let color_code = self.color_code;
@@ -94,7 +133,7 @@ impl Writer {
     }
 
     fn new_line(&mut self) {
-        for from in 1..BUFFER_HEIGHT {
+        for from in (FIRST_LINE + 1)..BUFFER_HEIGHT {
             let to = from - 1;
             for col in 0..BUFFER_WIDTH {
                 let ch = self.buffer.chars[from][col].read();
@@ -172,4 +211,14 @@ fn test_println_output() {
             assert_eq!(char::from(screen_char.ascii_char), c);
         }
     })
+}
+
+pub fn update_ticks() {
+    interrupts::without_interrupts(|| {
+        let mut guard = WRITER.lock();
+        guard.ticks += 1;
+        unsafe {
+            guard.update_status_line();
+        }
+    });
 }

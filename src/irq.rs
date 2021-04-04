@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use pic8259_simple::ChainedPics;
 use spin;
 use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
-use crate::prelude::*;
+use crate::{prelude::*, vga_buffer};
 use crate::{gdt, halt};
 
 lazy_static! {
@@ -72,7 +72,8 @@ extern "x86-interrupt" fn page_fault_handler(
 extern "x86-interrupt" fn timer_interrupt_handler(
     _stack_frame: &mut InterruptStackFrame)
 {
-    // print!(".");
+    vga_buffer::update_ticks();
+    
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
