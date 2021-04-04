@@ -14,6 +14,7 @@ pub mod qemu;
 pub mod serial;
 pub mod irq;
 pub mod gdt;
+pub mod prelude;
 
 pub fn init() {
     gdt::init();
