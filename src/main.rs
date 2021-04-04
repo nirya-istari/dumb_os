@@ -6,15 +6,15 @@
 #![test_runner(dumb_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use core::{mem, panic::PanicInfo};
-use dumb_os::{memory, prelude::*};
-use bootloader::{BootInfo, entry_point};
-use x86_64::{VirtAddr, structures::paging::{PageTable, PageTableFlags, Translate}};
+use bootloader::{entry_point, BootInfo};
+use core::panic::PanicInfo;
+use dumb_os::{memory::{self, BootInfoBumpAllocator, create_example_mapping, print_memory}, prelude::*};
+use x86_64::{VirtAddr, structures::paging::{Page, Translate}};
 
 entry_point!(kernel_main);
 
-fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    let physical_memory_offset = VirtAddr::new(boot_info.physical_memory_offset);
+fn kernel_main(bootinfo: &'static BootInfo) -> ! {
+    let physical_memory_offset = VirtAddr::new(bootinfo.physical_memory_offset);
 
     println!("Hello World{}", "!");
 
@@ -23,11 +23,13 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
     use x86_64::registers::control::Cr3;
 
     let (level_4_page_table, _) = Cr3::read();
-    println!("Level 4 page table at:{:?}", level_4_page_table.start_address());    
-    serial_println!("{:#?}", boot_info);
+    println!(
+        "Level 4 page table at:{:?}",
+        level_4_page_table.start_address()
+    );
+    serial_println!("{:#?}", bootinfo);
 
-    let mapper = unsafe { memory::init(physical_memory_offset) };
-
+    let mut mapper = unsafe { memory::init(physical_memory_offset) };
 
     let addresses = [
         // VGA buffer
@@ -37,7 +39,7 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         // Somewhere on the stack
         0x0100_0020_1a10,
         // The physical memory map.
-        boot_info.physical_memory_offset,
+        bootinfo.physical_memory_offset,
     ];
 
     for &address in addresses.iter() {
@@ -46,6 +48,12 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
         let phys = mapper.translate_addr(virt);
         serial_println!("{:?} -> {:?}", virt, phys);
     }
+
+    let mut frame_allocator = unsafe { 
+        BootInfoBumpAllocator::init(bootinfo) 
+    };
+
+    print_memory(physical_memory_offset.as_u64());
 
     #[cfg(test)]
     test_main();
