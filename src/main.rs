@@ -6,14 +6,46 @@
 #![test_runner(dumb_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-use core::panic::PanicInfo;
-use dumb_os::{print, println};
+use core::{mem, panic::PanicInfo};
+use dumb_os::{memory, prelude::*};
+use bootloader::{BootInfo, entry_point};
+use x86_64::{VirtAddr, structures::paging::{PageTable, PageTableFlags, Translate}};
 
-#[no_mangle]
-pub extern "C" fn _start() -> ! {
+entry_point!(kernel_main);
+
+fn kernel_main(boot_info: &'static BootInfo) -> ! {
+    let physical_memory_offset = VirtAddr::new(boot_info.physical_memory_offset);
+
     println!("Hello World{}", "!");
 
     dumb_os::init();
+
+    use x86_64::registers::control::Cr3;
+
+    let (level_4_page_table, _) = Cr3::read();
+    println!("Level 4 page table at:{:?}", level_4_page_table.start_address());    
+    serial_println!("{:#?}", boot_info);
+
+    let mapper = unsafe { memory::init(physical_memory_offset) };
+
+
+    let addresses = [
+        // VGA buffer
+        0xb8000,
+        // Some random code page
+        0x201008,
+        // Somewhere on the stack
+        0x0100_0020_1a10,
+        // The physical memory map.
+        boot_info.physical_memory_offset,
+    ];
+
+    for &address in addresses.iter() {
+        let virt = VirtAddr::new(address);
+
+        let phys = mapper.translate_addr(virt);
+        serial_println!("{:?} -> {:?}", virt, phys);
+    }
 
     #[cfg(test)]
     test_main();

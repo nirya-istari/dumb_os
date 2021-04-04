@@ -15,6 +15,7 @@ pub mod serial;
 pub mod irq;
 pub mod gdt;
 pub mod prelude;
+pub mod memory;
 
 pub fn init() {
     gdt::init();
