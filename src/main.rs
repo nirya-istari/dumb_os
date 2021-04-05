@@ -6,10 +6,12 @@
 #![test_runner(dumb_os::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
-use dumb_os::{memory::{self, BootInfoBumpAllocator, create_example_mapping, print_memory}, prelude::*};
-use x86_64::{VirtAddr, structures::paging::{Page, Translate}};
+use dumb_os::{allocator, memory::{self, BootInfoBumpAllocator, print_memory}, prelude::*};
+use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
 
@@ -27,33 +29,26 @@ fn kernel_main(bootinfo: &'static BootInfo) -> ! {
         "Level 4 page table at:{:?}",
         level_4_page_table.start_address()
     );
-    serial_println!("{:#?}", bootinfo);
+    // serial_println!("{:#?}", bootinfo);
 
     let mut mapper = unsafe { memory::init(physical_memory_offset) };
-
-    let addresses = [
-        // VGA buffer
-        0xb8000,
-        // Some random code page
-        0x201008,
-        // Somewhere on the stack
-        0x0100_0020_1a10,
-        // The physical memory map.
-        bootinfo.physical_memory_offset,
-    ];
-
-    for &address in addresses.iter() {
-        let virt = VirtAddr::new(address);
-
-        let phys = mapper.translate_addr(virt);
-        serial_println!("{:?} -> {:?}", virt, phys);
-    }
 
     let mut frame_allocator = unsafe { 
         BootInfoBumpAllocator::init(bootinfo) 
     };
 
-    print_memory(physical_memory_offset.as_u64());
+    unsafe {
+        allocator::init_heap(&mut mapper, &mut frame_allocator)
+            .expect("Heap allocation failed");
+    }
+
+    // print_memory(physical_memory_offset.as_u64());
+    
+    loop {
+        let m = alloc::boxed::Box::new([0; 1]);
+        println!("Allocated {:x}", m.as_ptr() as usize);
+    }
+
 
     #[cfg(test)]
     test_main();
