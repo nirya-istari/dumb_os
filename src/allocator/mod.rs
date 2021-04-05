@@ -1,4 +1,4 @@
-// src/allocator.rs
+// src/allocator/mod.rs
 
 use core::alloc::{GlobalAlloc, Layout};
 use spin::Mutex;
