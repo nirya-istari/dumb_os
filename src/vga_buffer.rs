@@ -62,7 +62,7 @@ pub struct Writer {
     column_position: usize,
     row_position: usize,
     color_code: ColorCode,
-    ticks: u64,
+    ticks: u128,
     buffer: &'static mut Buffer,
 }
 
@@ -104,7 +104,9 @@ impl Writer {
 
         // TODO: make this not go over line count.
         let ticks = self.ticks;
-        write!(self, "tick: {}", ticks).ok();
+        let cycles: u64 = core::arch::x86_64::_rdtsc();
+
+        write!(self, "tick: {}, cycles: {}", ticks, cycles).ok();
 
         swap(&mut orig_row_positon, &mut self.row_position);
         swap(&mut orig_column_position, &mut self.column_position);
