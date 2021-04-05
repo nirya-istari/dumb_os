@@ -10,7 +10,7 @@ extern crate alloc;
 
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
-use dumb_os::{allocator, memory::{self, BootInfoBumpAllocator, print_memory}, prelude::*};
+use dumb_os::{allocator, memory::{BootInfoBumpAllocator}, prelude::*};
 use x86_64::VirtAddr;
 
 entry_point!(kernel_main);
@@ -31,7 +31,7 @@ fn kernel_main(bootinfo: &'static BootInfo) -> ! {
     );
     // serial_println!("{:#?}", bootinfo);
 
-    let mut mapper = unsafe { memory::init(physical_memory_offset) };
+    let mut mapper = unsafe { dumb_os::memory::init(physical_memory_offset) };
 
     let mut frame_allocator = unsafe { 
         BootInfoBumpAllocator::init(bootinfo) 
@@ -43,12 +43,6 @@ fn kernel_main(bootinfo: &'static BootInfo) -> ! {
     }
 
     // print_memory(physical_memory_offset.as_u64());
-    
-    loop {
-        let m = alloc::boxed::Box::new([0; 1]);
-        println!("Allocated {:x}", m.as_ptr() as usize);
-    }
-
 
     #[cfg(test)]
     test_main();
