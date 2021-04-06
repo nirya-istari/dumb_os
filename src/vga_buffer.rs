@@ -1,4 +1,4 @@
-// vga_buffer.rs
+// src/vga_buffer.rs
 
 use core::{
     fmt::{self, Write},

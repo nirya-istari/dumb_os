@@ -1,3 +1,4 @@
+// tests/basic_boot.rs
 
 #![no_std]
 #![no_main]

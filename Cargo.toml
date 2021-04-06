@@ -22,6 +22,8 @@ test-timeout = 300
 
 [dependencies]
 bootloader = { version = "0.9.8", features = ["map_physical_memory"] }
+byteorder = { version = "1.4", default-features = false, features = ["i128"] }
+bitflags = "1.2"
 conquer-once = { version = "0.3.2", default-features = false }
 crossbeam = { version = "0.8", default-features = false, features = ["alloc"] }
 futures = { version = "0.3", default-features = false, features = ["async-await", "alloc"] }

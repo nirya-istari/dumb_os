@@ -1,4 +1,4 @@
-// main.rs
+// src/main.rs
 
 #![no_std]
 #![no_main]
@@ -23,6 +23,7 @@ use x86_64::VirtAddr;
 entry_point!(kernel_main);
 
 fn kernel_main(bootinfo: &'static BootInfo) -> ! {
+
     // Same seed for testing
     let mut rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
 

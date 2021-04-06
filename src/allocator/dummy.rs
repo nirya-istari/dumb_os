@@ -1,3 +1,5 @@
+// src/allocator/dummy.rs
+
 use core::alloc::{GlobalAlloc, Layout};
 
 struct DummyAllocator;

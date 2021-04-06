@@ -1,4 +1,4 @@
-// lib.rs
+// src/lib.rs
 
 #![no_std]
 #![cfg_attr(test, no_main)]
@@ -25,6 +25,7 @@ pub mod qemu;
 pub mod serial;
 pub mod tasks;
 pub mod vga_buffer;
+mod apic;
 
 pub fn init() {
     gdt::init();

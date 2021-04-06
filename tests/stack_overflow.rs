@@ -1,4 +1,4 @@
-// in tests/stack_overflow.rs
+// tests/stack_overflow.rs
 
 #![no_std]
 #![no_main]

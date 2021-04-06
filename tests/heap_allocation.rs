@@ -1,4 +1,4 @@
-// src/tests/heap_allocation
+// tests/heap_allocation
 
 #![no_std]
 #![no_main]

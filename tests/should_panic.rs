@@ -1,3 +1,4 @@
+// tests/should_panic.rs
 
 #![no_std]
 #![no_main]

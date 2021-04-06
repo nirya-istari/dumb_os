@@ -1,4 +1,4 @@
-// irq.rs
+// src/irq.rs
 
 use crate::{gdt, halt_loop};
 use crate::{prelude::*, vga_buffer};
