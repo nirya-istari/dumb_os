@@ -113,10 +113,10 @@ impl BootInfoBumpAllocator {
 unsafe impl FrameAllocator<Size4KiB> for BootInfoBumpAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
         let next = self.usable_frames().nth(self.next);
-        if next.is_some() {
-            serial_println!("allocated frame {}", self.next);
+        if next.is_some() {            
             self.next += 1;
         }
         next
     }
 }
+

@@ -1,7 +1,12 @@
 // src/allocator/mod.rs
 
-use core::alloc::{GlobalAlloc, Layout};
-use spin::Mutex;
+pub mod dummy;
+pub mod epsilon;
+// pub mod list_allocator;
+
+#[cfg(epsilon)]
+use epsilon::EpsilonAllocatorLocked;
+use linked_list_allocator::LockedHeap;
 use x86_64::{
     structures::paging::{
         mapper::MapToError, FrameAllocator, Mapper, Page, PageTableFlags, Size4KiB,
@@ -9,30 +14,23 @@ use x86_64::{
     VirtAddr,
 };
 
-pub const HEAP_START: u64 = 0x_4444_4444_0000;
-pub const HEAP_SIZE: u64 = 128 * 1024; // 128 KiB
+pub const HEAP_START: u64 = 0x4444_4444_0000;
+pub const HEAP_SIZE: u64 = 64 * 1024; // 64 KiB
 
+#[cfg(feature = "linked_list_allocator")]
+#[global_allocator]
+static ALLOCATOR: LockedHeap = LockedHeap::empty();
+
+#[cfg(feature = "epsilon_allocator")]
 #[global_allocator]
 static ALLOCATOR: EpsilonAllocatorLocked = EpsilonAllocatorLocked::new();
-
-struct DummyAllocator;
-
-unsafe impl GlobalAlloc for DummyAllocator {
-    unsafe fn alloc(&self, _layout: Layout) -> *mut u8 {
-        core::ptr::null_mut()
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        panic!("Should not happen");
-    }
-}
 
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout);
 }
 
-pub unsafe fn init_heap(
+pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> Result<(), MapToError<Size4KiB>> {
@@ -49,78 +47,17 @@ pub unsafe fn init_heap(
             .allocate_frame()
             .ok_or(MapToError::FrameAllocationFailed)?;
         let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-        mapper.map_to(page, frame, flags, frame_allocator)?.flush();
+        unsafe {
+            mapper.map_to(page, frame, flags, frame_allocator)?.flush();
+        }
     }
 
     let start = page_range.start.start_address();
-
-    {
-        let allocator: EpsilonAllocator = EpsilonAllocator {
-            _start: start.as_u64(),
-            next: start.as_u64(),
-            remaining: HEAP_SIZE,
-        };
-        let mut lock = ALLOCATOR.alloc.lock();
-        *lock = Some(allocator);
+    unsafe {
+        ALLOCATOR
+            .lock()
+            .init(start.as_u64() as usize, HEAP_SIZE as usize);
     }
 
     Ok(())
-}
-
-struct EpsilonAllocatorLocked {
-    alloc: Mutex<Option<EpsilonAllocator>>,
-}
-impl EpsilonAllocatorLocked {
-    const fn new() -> EpsilonAllocatorLocked {
-        EpsilonAllocatorLocked {
-            alloc: Mutex::new(None),
-        }
-    }
-}
-
-struct EpsilonAllocator {
-    _start: u64,
-    next: u64,
-    remaining: u64,
-}
-
-impl EpsilonAllocator {
-    unsafe fn bump(&mut self, size: u64) -> bool {
-        let next = self.next as *mut u8;
-        if size > self.remaining {
-            false
-        } else {
-            self.next = next.offset(size as isize) as u64;
-            self.remaining -= size;
-            true
-        }
-    }
-}
-
-unsafe impl GlobalAlloc for EpsilonAllocatorLocked {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let mut guard = self.alloc.lock();
-        match *guard {
-            Some(ref mut a) => {
-                let next = a.next as *mut u8;
-                let align_skip = next.align_offset(layout.align());
-
-                if a.bump(align_skip as u64) {
-                    let result = a.next as *mut u8;
-                    if a.bump(layout.size() as u64) {
-                        result
-                    } else {
-                        core::ptr::null_mut()
-                    }
-                } else {
-                    core::ptr::null_mut()
-                }
-            }
-            None => core::ptr::null_mut(),
-        }
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
-        // YOLO.
-    }
 }

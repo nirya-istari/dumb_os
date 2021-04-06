@@ -3,30 +3,33 @@
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
-#![feature(abi_x86_interrupt)]
-#![feature(alloc_error_handler)]
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+#![feature(abi_x86_interrupt)]
+#![feature(alloc_error_handler)]
+#![feature(alloc_prelude)]
+#![feature(debug_non_exhaustive)]
+#![feature(int_bits_const)]
+#![feature(option_expect_none)]
 
 extern crate alloc;
 
 use core::panic::PanicInfo;
 
-pub mod vga_buffer;
+pub mod allocator;
+pub mod gdt;
+pub mod irq;
+pub mod memory;
+pub mod prelude;
 pub mod qemu;
 pub mod serial;
-pub mod irq;
-pub mod gdt;
-pub mod prelude;
-pub mod memory;
-pub mod allocator;
+pub mod tasks;
+pub mod vga_buffer;
 
 pub fn init() {
     gdt::init();
     irq::init();
-    unsafe {
-        irq::PICS.lock().initialize()
-    };
+    unsafe { irq::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
 }
 
@@ -57,10 +60,10 @@ pub fn test_panic_handler(info: &PanicInfo) -> ! {
     serial_println!("[failed]\n");
     serial_println!("Error: {}\n", info);
     qemu::exit_qemu(qemu::ExitCode::Failed);
-    halt();
+    halt_loop();
 }
 
-pub fn halt() -> ! {
+pub fn halt_loop() -> ! {
     use x86_64::instructions::hlt;
     loop {
         hlt();
@@ -73,7 +76,7 @@ pub fn halt() -> ! {
 pub extern "C" fn _start() -> ! {
     init();
     test_main();
-    halt();
+    halt_loop();
 }
 
 #[cfg(test)]

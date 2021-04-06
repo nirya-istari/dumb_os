@@ -4,6 +4,10 @@ version = "0.1.0"
 authors = ["Triss Healy <trissylegs@gmail.com>"]
 edition = "2018"
 
+[features]
+default = ["linked_list_allocator"]
+epsilon_allocator = []
+
 [package.metadata.bootimage]
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
@@ -18,13 +22,19 @@ test-timeout = 300
 
 [dependencies]
 bootloader = { version = "0.9.8", features = ["map_physical_memory"] }
-volatile = "0.2.6"
-spin = "0.5.2"
-x86_64 = "0.13"
-uart_16550 = "0.2"
-pic8259_simple = "0.2"
-pc-keyboard = "0.5.0"
+conquer-once = { version = "0.3.2", default-features = false }
+crossbeam = { version = "0.8", default-features = false, features = ["alloc"] }
+futures = { version = "0.3", default-features = false, features = ["async-await", "alloc"] }
 lazy_static = { version = "1.0", features = ["spin_no_std"]}
+linked_list_allocator = { version = "0.8.11", optional = true }
+pc-keyboard = "0.5.0"
+pic8259_simple = "0.2"
+rand = { version = "0.8", default-features = false }
+rand_pcg = "0.3"
+spin = "0.5.2"
+uart_16550 = "0.2"
+volatile = "0.2.6"
+x86_64 = "0.13"
 
 [[test]]
 name = "should_panic"
