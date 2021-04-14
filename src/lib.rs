@@ -25,12 +25,11 @@ pub mod qemu;
 pub mod serial;
 pub mod tasks;
 pub mod vga_buffer;
-mod apic;
 
 pub fn init() {
     gdt::init();
     irq::init();
-    unsafe { irq::PICS.lock().initialize() };
+    unsafe { irq::pic_8256::PICS.lock().initialize() };
     x86_64::instructions::interrupts::enable();
 }
 

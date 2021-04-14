@@ -35,8 +35,9 @@ rand = { version = "0.8", default-features = false }
 rand_pcg = "0.3"
 spin = "0.5.2"
 uart_16550 = "0.2"
-volatile = "0.2.6"
+volatile = "0.2"
 x86_64 = "0.13"
+field-offset = "0.3"
 
 [[test]]
 name = "should_panic"

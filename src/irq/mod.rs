@@ -1,13 +1,15 @@
-// src/irq.rs
+// src/irq/irq.rs
+
+pub mod pic_8256;
+// pub mod apic;
 
 use crate::{gdt, halt_loop};
 use crate::{prelude::*, vga_buffer};
 use lazy_static::lazy_static;
-use pc_keyboard::{layouts, HandleControl, Keyboard, ScancodeSet1};
-use pic8259_simple::ChainedPics;
-use spin;
 use x86_64::instructions::port::Port;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
+
+use self::pic_8256::PICS;
 
 lazy_static! {
     static ref IDT: InterruptDescriptorTable = {
@@ -30,6 +32,38 @@ lazy_static! {
 
 pub fn init() {
     IDT.load();
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum InterruptIndex {
+    // PIC1
+    Timer = pic_8256::PIC1_OFFSET,
+    Keyboard,
+    SecondaryPic,
+    SerialPort2,
+    SerialPort1,
+    ParallelPort23,
+    FloppyDisk,
+    ParallelPort1,
+    // PIC2
+    RTC,
+    ACPI,
+    _Availabe1,
+    _Availabe2,
+    Mouse,
+    CoProcessor,
+    PrimaryATA,
+    SecondaryATA,
+}
+
+impl InterruptIndex {
+    pub fn as_u8(self) -> u8 {
+        self as u8
+    }
+    pub fn as_usize(self) -> usize {
+        usize::from(self.as_u8())
+    }
 }
 
 extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
@@ -87,49 +121,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: &mut Interrup
 
 // PICS
 
-pub const PIC1_OFFSET: u8 = 32;
-pub const PIC2_OFFSET: u8 = PIC1_OFFSET + 8;
-
-pub static PICS: spin::Mutex<ChainedPics> =
-    spin::Mutex::new(unsafe { ChainedPics::new(PIC1_OFFSET, PIC2_OFFSET) });
-
-lazy_static! {
-    static ref KEYBOARD: spin::Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = spin::Mutex::new(
-        Keyboard::new(layouts::Us104Key, ScancodeSet1, HandleControl::Ignore)
-    );
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum InterruptIndex {
-    // PIC1
-    Timer = PIC1_OFFSET,
-    Keyboard,
-    SecondaryPic,
-    SerialPort2,
-    SerialPort1,
-    ParallelPort23,
-    FloppyDisk,
-    ParallelPort1,
-    // PIC2
-    RTC,
-    ACPI,
-    _Availabe1,
-    _Availabe2,
-    Mouse,
-    CoProcessor,
-    PrimaryATA,
-    SecondaryATA,
-}
-
-impl InterruptIndex {
-    pub fn as_u8(self) -> u8 {
-        self as u8
-    }
-    pub fn as_usize(self) -> usize {
-        usize::from(self.as_u8())
-    }
-}
 
 #[test_case]
 fn test_breakpoint_exception() {
