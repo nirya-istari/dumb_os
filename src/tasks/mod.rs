@@ -2,6 +2,8 @@
 
 pub mod executor;
 pub mod keyboard;
+pub mod timer;
+pub mod mpsc;
 
 use core::{future::Future, pin::Pin, sync::atomic::{AtomicU64, Ordering}, task::{Context, Poll}};
 use alloc::prelude::v1::*;
@@ -18,7 +20,8 @@ impl TaskId {
 
 pub struct Task {
     id: TaskId,
-    future: Pin<Box<dyn Future<Output = ()>>>
+    desc: Option<String>,
+    future: Pin<Box<dyn Future<Output = ()> + Send>>
 }
 
 impl core::fmt::Debug for Task {
@@ -30,12 +33,22 @@ impl core::fmt::Debug for Task {
 }
 
 impl Task {    
-    pub fn new(ts: impl Future<Output = ()> + 'static) -> Task {
+    pub fn new(ts: impl Future<Output = ()> + Send + 'static, desc: impl ToString) -> Task {
         Task {
             id: TaskId::new(),
-            future: Box::pin(ts)
+            future: Box::pin(ts),
+            desc: Some(desc.to_string()),
         }
     }
+
+    pub fn no_desc(ts: impl Future<Output = ()> + Send + 'static) -> Task {
+        Task {
+            id: TaskId::new(),
+            future: Box::pin(ts),
+            desc: None
+        }
+    }
+    
 
     pub fn poll(&mut self, context: &mut Context) -> Poll<()> {
         self.future.as_mut().poll(context)
@@ -43,5 +56,5 @@ impl Task {
 }
 
 pub fn yield_task() -> impl Future<Output = ()> {
-    executor::Executor::yield_task()
+    executor::yield_task()
 }

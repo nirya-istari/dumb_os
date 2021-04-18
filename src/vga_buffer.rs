@@ -9,6 +9,8 @@ use spin::Mutex;
 use volatile::Volatile;
 use x86_64::instructions::interrupts;
 
+use crate::tasks::timer::current_tick;
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -62,7 +64,7 @@ pub struct Writer {
     column_position: usize,
     row_position: usize,
     color_code: ColorCode,
-    ticks: u128,
+    ticks: u64,
     buffer: &'static mut Buffer,
 }
 
@@ -216,9 +218,10 @@ fn test_println_output() {
 }
 
 pub fn update_ticks() {
+    let ticks = current_tick();
     interrupts::without_interrupts(|| {
-        let mut guard = WRITER.lock();
-        guard.ticks += 1;
+        let mut guard = WRITER.lock();        
+        guard.ticks = ticks;
         unsafe {
             guard.update_status_line();
         }

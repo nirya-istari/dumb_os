@@ -1,34 +1,49 @@
-use super::{Task, TaskId};
+use super::{mpsc::Sender, Task, TaskId};
 use crate::prelude::*;
 use alloc::{collections::BTreeMap, sync::Arc};
 use alloc::{prelude::v1::*, task::Wake};
-use futures::Future;
-use x86_64::instructions::interrupts;
+use conquer_once::spin::OnceCell;
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use crossbeam::queue::ArrayQueue;
+use futures::Future;
+use x86_64::instructions::interrupts;
 
 pub struct Executor {
-    tasks: BTreeMap<TaskId, Task>,
     task_queue: Arc<ArrayQueue<TaskId>>,
+    tasks: BTreeMap<TaskId, Task>,
     waker_cache: BTreeMap<TaskId, Waker>,
+    new_tasks: Arc<ArrayQueue<Task>>,
+}
+
+static NEW_TASK_QUEUE: OnceCell<Arc<ArrayQueue<Task>>> = OnceCell::uninit();
+
+pub fn spawn_task(ts: Task) {
+    NEW_TASK_QUEUE
+        .get()
+        .expect("Task queue not inialized")
+        .push(ts)
+        .expect("Task queue full");
+}
+
+pub fn spawn(fut: impl Future<Output = ()> + Send + 'static, desc: impl ToString) {
+    spawn_task(Task::new(fut, desc));
 }
 
 impl Executor {
     pub fn new() -> Box<Executor> {
+        let queue = NEW_TASK_QUEUE.get_or_init(|| Arc::new(ArrayQueue::new(128)));
+
         Box::new(Executor {
             tasks: BTreeMap::new(),
             task_queue: Arc::new(ArrayQueue::new(128)),
             waker_cache: BTreeMap::new(),
+            new_tasks: queue.clone(),
         })
     }
 
-    pub fn spawn(&mut self, task: Task) {
-        serial_println!("Task {:?} spawned.", task.id);
-        let task_id = task.id;
-        self.tasks
-            .insert(task_id, task)
-            .expect_none("Task already spawned");
-        self.task_queue.push(task_id).ok();
+    /// Attempt to spawn a task or return it back to the caller.
+    pub fn spawn_task(&self, task: Task) -> Result<(), Task> {
+        self.new_tasks.push(task)
     }
 
     pub fn run(&mut self) -> ! {
@@ -38,9 +53,9 @@ impl Executor {
         }
     }
 
-    pub fn sleep_if_idle(&mut self)  {
+    pub fn sleep_if_idle(&mut self) {
         interrupts::disable();
-        if self.task_queue.is_empty() {
+        if self.task_queue.is_empty() && self.new_tasks.is_empty() {
             interrupts::enable_and_hlt();
         } else {
             interrupts::enable();
@@ -52,13 +67,30 @@ impl Executor {
             tasks,
             task_queue,
             waker_cache,
+            new_tasks,
         } = self;
+        
+        while let Some(task) = new_tasks.pop() {
 
-        while let Some(task_id) = task_queue.pop() {
+            let task_id = task.id;
+            if let Some(ref desc) = task.desc {
+                serial_println!("new task: {}", desc);
+            } else {
+                serial_println!("new task: {:?}", task_id)
+            }
+            tasks.insert(task_id, task);
+            task_queue.push(task_id).expect("Task queue overflowwing");
+        }
+
+        
+        while let Some(task_id) = task_queue.pop() {            
             let task = match tasks.get_mut(&task_id) {
                 Some(task) => task,
                 None => continue,
             };
+            if let Some(ref desc) = task.desc {
+                serial_println!("running task: {}", desc);
+            }
             let waker: &mut Waker = waker_cache
                 .entry(task_id)
                 .or_insert_with(|| TaskWaker::new(task_id, task_queue.clone()));
@@ -66,7 +98,11 @@ impl Executor {
 
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
-                    serial_println!("Task {:?} completed", task_id);
+                    if let Some(ref desc) = task.desc {
+                        serial_println!("task completed: {}", desc);
+                    } else {
+                        serial_println!("task completed: {:?}", task_id);
+                    }
                     // I think NLL saves us here. But I have no idea how this works re. lifetimes.
 
                     tasks.remove(&task_id);
@@ -79,7 +115,7 @@ impl Executor {
 
     pub fn run_simple(&mut self) {
         while let Some(task_id) = self.task_queue.pop() {
-            let waker = dummy_water();
+            let waker = dummy_waker();
             let mut context = Context::from_waker(&waker);
 
             let task = self.tasks.get_mut(&task_id).expect("Task missing");
@@ -89,24 +125,34 @@ impl Executor {
                     serial_println!("Task {:?} completed.", task_id);
                 }
                 Poll::Pending => {
-                    self.task_queue
-                        .push(task_id)
-                        .expect("Tasks queue is full.");
+                    self.task_queue.push(task_id).expect("Tasks queue is full.");
                 }
             }
         }
     }
+}
 
-    pub(super) fn yield_task() -> impl Future<Output = ()> {
-        Yield { yielded: false }
+#[derive(Debug, Clone)]
+pub struct SpawnHandle {
+    tx: Sender<Task>,
+}
+impl SpawnHandle {
+    pub fn spawn(&mut self, future: impl Future<Output = ()> + Send + 'static, desc: impl ToString) {
+        let task = Task::new(future, desc);
+        self.tx.try_send(task).expect("Spawn channel closed");
     }
 }
 
+pub fn yield_task() -> impl Future<Output = ()> + 'static {
+    Yield { yielded: false }
+}
+
+#[derive(Debug)]
 struct Yield {
-    yielded: bool
+    yielded: bool,
 }
 impl Future for Yield {
-    type Output = (); 
+    type Output = ();
 
     fn poll(mut self: core::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if self.yielded {
@@ -135,7 +181,6 @@ impl Wake for TaskWaker {
 }
 
 impl TaskWaker {
-
     fn wake_task(&self) {
         self.task_queue.push(self.task_id).ok();
     }
@@ -159,6 +204,6 @@ fn dummy_raw_waker() -> RawWaker {
     RawWaker::new(0x4 as *const (), &DUMMY_RAW_WAKER_VTABLE)
 }
 
-fn dummy_water() -> Waker {
+fn dummy_waker() -> Waker {
     unsafe { Waker::from_raw(dummy_raw_waker()) }
 }

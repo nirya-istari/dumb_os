@@ -3,12 +3,12 @@
 pub mod pic_8256;
 // pub mod apic;
 
-use crate::{gdt, halt_loop};
+
+use crate::{gdt, halt_loop, tasks::timer};
 use crate::{prelude::*, vga_buffer};
 use lazy_static::lazy_static;
-use x86_64::instructions::port::Port;
+use x86_64::instructions::{port::Port};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
-
 use self::pic_8256::PICS;
 
 lazy_static! {
@@ -66,19 +66,19 @@ impl InterruptIndex {
     }
 }
 
-extern "x86-interrupt" fn breakpoint_handler(stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn breakpoint_handler(stack_frame: InterruptStackFrame) {
     println!("EXCEPTION: Breakpoint\n{:#?}", stack_frame);
 }
 
 extern "x86-interrupt" fn double_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: u64,
 ) -> ! {
     panic!("DOUBLE FAULT. Code {}:\n{:#?}", error_code, stack_frame);
 }
 
 extern "x86-interrupt" fn page_fault_handler(
-    stack_frame: &mut InterruptStackFrame,
+    stack_frame: InterruptStackFrame,
     error_code: PageFaultErrorCode,
 ) {
     use x86_64::registers::control::Cr2;
@@ -96,8 +96,9 @@ extern "x86-interrupt" fn page_fault_handler(
     halt_loop();
 }
 
-extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     vga_buffer::update_ticks();
+    timer::next_tick();
 
     unsafe {
         PICS.lock()
@@ -105,7 +106,7 @@ extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: &mut InterruptSt
     }
 }
 
-extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: &mut InterruptStackFrame) {
+extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
     // Always take your locks together.
     let mut pics = PICS.lock();
 
@@ -120,7 +121,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: &mut Interrup
 }
 
 // PICS
-
 
 #[test_case]
 fn test_breakpoint_exception() {

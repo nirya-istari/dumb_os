@@ -2,7 +2,7 @@
 
 
 use crate::prelude::*;
-use bootloader::{bootinfo::MemoryRegionType, BootInfo};
+use bootloader::{BootInfo, bootinfo::MemoryRegionType};
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{

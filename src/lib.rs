@@ -8,9 +8,6 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_prelude)]
-#![feature(debug_non_exhaustive)]
-#![feature(int_bits_const)]
-#![feature(option_expect_none)]
 
 extern crate alloc;
 
@@ -25,6 +22,7 @@ pub mod qemu;
 pub mod serial;
 pub mod tasks;
 pub mod vga_buffer;
+pub mod sync;
 
 pub fn init() {
     gdt::init();
