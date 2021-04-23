@@ -1,5 +1,8 @@
 // src/lib.rs
 
+// TMP:
+#![allow(dead_code)]
+
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
@@ -8,21 +11,26 @@
 #![feature(abi_x86_interrupt)]
 #![feature(alloc_error_handler)]
 #![feature(alloc_prelude)]
+#![feature(asm)]
+#![feature(try_reserve)]
 
 extern crate alloc;
 
 use core::panic::PanicInfo;
 
+use x86_64::instructions::port::Port;
+
 pub mod allocator;
+pub mod disk;
 pub mod gdt;
 pub mod irq;
 pub mod memory;
 pub mod prelude;
 pub mod qemu;
 pub mod serial;
+pub mod sync;
 pub mod tasks;
 pub mod vga_buffer;
-pub mod sync;
 
 pub fn init() {
     gdt::init();
@@ -81,4 +89,14 @@ pub extern "C" fn _start() -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     test_panic_handler(info)
+}
+
+/// Delays a short time writing to Port 0x80.
+pub fn delay(microseconds: u32) {
+    unsafe {
+        // Writing to port 0x80 does nothing but wastes time.
+        for _ in 0..microseconds {
+            Port::<u8>::new(0x80).write(0);
+        }
+    }
 }

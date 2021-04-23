@@ -15,12 +15,14 @@ test-args = [
     "-display", "none"
 ]
 run-args = [
+    "-machine", "pc",
     "-serial", "stdio"
 ]
 test-success-exit-code = 33         # (0x10 << 1) | 1
 test-timeout = 300
 
 [dependencies]
+
 bootloader = { version = "0.9.8", features = ["map_physical_memory"] }
 byteorder = { version = "1.4", default-features = false, features = ["i128"] }
 bitflags = "1.2"
@@ -38,6 +40,8 @@ uart_16550 = "0.2"
 volatile = "0.2"
 x86_64 = "0.14.0"
 field-offset = "0.3"
+ux = { version = "0.1", default-features = false }
+smallvec = { version = "1.6", default-features = false, features = [ "const_generics" ] }
 
 [[test]]
 name = "should_panic"

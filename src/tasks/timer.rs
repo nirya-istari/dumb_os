@@ -4,8 +4,9 @@ use core::{pin::Pin, sync::atomic::{AtomicU64, Ordering}, task::{Context, Poll}}
 use alloc::{collections::BinaryHeap, sync::Arc};
 use conquer_once::spin::OnceCell;
 use futures::{Future, Stream, StreamExt, stream::select, task::{AtomicWaker}};
-use crate::prelude::*;
 
+#[allow(unused_imports)] use crate::prelude::*;
+use crate::vga_buffer;
 use super::{Task, mpsc::{self, Receiver, Sender}};
 
 static CURRENT_TICK: AtomicU64 = AtomicU64::new(0);
@@ -53,8 +54,8 @@ async fn timer_main(
 
     while let Some(ev) = stream.next().await {
         match ev {
-            TimerEvent::Tick(tick) => {
-                print!(".");
+            TimerEvent::Tick(tick) => {                
+                vga_buffer::update_ticks();
                 while queue.peek().map(|t| t.tick <= tick).unwrap_or(false) {
                     let t = queue.pop().unwrap();
                     t.waker.wake();

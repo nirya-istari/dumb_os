@@ -3,9 +3,9 @@
 pub mod pic_8256;
 // pub mod apic;
 
-
 use crate::{gdt, halt_loop, tasks::timer};
-use crate::{prelude::*, vga_buffer};
+use crate::prelude::*;
+use crate::disk::ata;
 use lazy_static::lazy_static;
 use x86_64::instructions::{port::Port};
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame, PageFaultErrorCode};
@@ -25,6 +25,9 @@ lazy_static! {
         idt[InterruptIndex::Timer.as_usize()].set_handler_fn(timer_interrupt_handler);
 
         idt[InterruptIndex::Keyboard.as_usize()].set_handler_fn(keyboard_interrupt_handler);
+
+        idt[InterruptIndex::PrimaryATA.as_usize()].set_handler_fn(primary_ata_handler);
+        idt[InterruptIndex::SecondaryATA.as_usize()].set_handler_fn(secondary_ata_handler);
 
         idt
     };
@@ -97,7 +100,6 @@ extern "x86-interrupt" fn page_fault_handler(
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    vga_buffer::update_ticks();
     timer::next_tick();
 
     unsafe {
@@ -117,6 +119,25 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
     unsafe {
         pics.notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
+    }
+}
+
+extern "x86-interrupt" fn primary_ata_handler(_stack_frame: InterruptStackFrame) {
+    let mut pics = PICS.lock();
+    serial_println!("primary ata handler");
+    ata::interrupt( ata::BusKind::Primary); 
+    
+    unsafe {
+
+        pics.notify_end_of_interrupt(InterruptIndex::PrimaryATA.as_u8());
+    }
+}
+
+extern "x86-interrupt" fn secondary_ata_handler(_stack_frame: InterruptStackFrame) {
+    let mut pics = PICS.lock();
+    serial_println!("secondary ata handler");
+    unsafe {
+        pics.notify_end_of_interrupt(InterruptIndex::SecondaryATA.as_u8());
     }
 }
 

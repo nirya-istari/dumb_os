@@ -11,10 +11,14 @@ extern crate alloc;
 use alloc::prelude::v1::*;
 use alloc::format;
 
+use core::panic::PanicInfo;
+
 use bootloader::{entry_point, BootInfo};
 use rand::{Rng, SeedableRng};
+use rand::prelude::*;
 use rand_pcg::Pcg64;
-use core::panic::PanicInfo;
+use x86_64::VirtAddr;
+
 use dumb_os::memory::BootInfoBumpAllocator;
 use dumb_os::prelude::*;
 use dumb_os::tasks::executor::Executor;
@@ -25,8 +29,9 @@ use dumb_os::{
     allocator,
     tasks::{executor::spawn, timer::sleep},
 };
-use rand::prelude::*;
-use x86_64::VirtAddr;
+use dumb_os::disk::disk_main;
+
+
 
 entry_point!(kernel_main);
 /* #[export_name = "_start"]
@@ -72,12 +77,14 @@ fn kernel_main(bootinfo: &'static BootInfo) -> ! {
 
     executor.spawn_task(timer_task).unwrap();
     executor.spawn_task(Task::new(print_keypresses(), "print keypresses")).unwrap();
+    executor.spawn_task(Task::new(disk_main(), "disk main")).unwrap();
+
     executor
         .spawn_task(Task::new(example_task::<Pcg64>(rng.gen()), "example task" ))
         .unwrap();
-    executor
+    /* executor
         .spawn_task(Task::new(example_timer(rng.gen() ), "example timer"))
-        .unwrap();    
+        .unwrap();     */
 
     executor.run()
 }
@@ -92,6 +99,7 @@ async fn example_task<R: Rng + SeedableRng>(seed: R::Seed) {
     println!("{}. async number: {}", id, async_number().await);
 }
 
+#[allow(dead_code)]
 async fn example_timer(seed: <Pcg64 as SeedableRng>::Seed) {
     let mut rng = Pcg64::from_seed(seed);
 

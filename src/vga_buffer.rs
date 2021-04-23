@@ -219,11 +219,9 @@ fn test_println_output() {
 
 pub fn update_ticks() {
     let ticks = current_tick();
-    interrupts::without_interrupts(|| {
-        let mut guard = WRITER.lock();        
-        guard.ticks = ticks;
-        unsafe {
-            guard.update_status_line();
-        }
-    });
+    let mut guard = WRITER.lock();        
+    guard.ticks = ticks;
+    unsafe {
+        guard.update_status_line();
+    }
 }
