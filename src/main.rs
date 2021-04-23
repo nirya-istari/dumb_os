@@ -40,13 +40,15 @@ pub extern "C" fn __impl_start(boot_info: &'static bootloader::boot_info::BootIn
     f(boot_info)
 }*/
 
-fn kernel_main(bootinfo: &'static BootInfo) -> ! {
+fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     // Same seed for testing
     let mut rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
 
     let physical_memory_offset = VirtAddr::new(
         bootinfo
             .physical_memory_offset
+            .into_option()
+            .expect("no physical memory offset")
     );
 
     println!("Hello World{}", "!");

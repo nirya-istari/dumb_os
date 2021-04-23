@@ -2,7 +2,8 @@
 
 
 use crate::prelude::*;
-use bootloader::{BootInfo, bootinfo::MemoryRegionType};
+
+use bootloader::{BootInfo, boot_info::MemoryRegionKind};
 use x86_64::{
     registers::control::Cr3,
     structures::paging::{
@@ -98,13 +99,13 @@ impl BootInfoBumpAllocator {
 
     fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
         // iter over all memory regions
-        self.bootinfo.memory_map.iter()
+        self.bootinfo.memory_regions.iter()
             // Filter by Usuable memory regions
-            .filter(|region| region.region_type == MemoryRegionType::Usable)
+            .filter(|region| region.kind == MemoryRegionKind::Usable)
             // Extract the ranges and iterator over frame numbers
-            .flat_map(|region| region.range.start_frame_number .. region.range.end_frame_number)
+            .flat_map(|region| region.start .. region.end)
             // Convert frame numbers to addresses
-            .map(|frame| PhysAddr::new(frame * 4096))
+            .map(|addr| PhysAddr::new(addr))
             // Create PhysFrame value from address
             .map(|address|  PhysFrame::containing_address(address))        
     }

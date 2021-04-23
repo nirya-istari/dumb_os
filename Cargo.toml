@@ -23,7 +23,7 @@ test-timeout = 300
 
 [dependencies]
 
-bootloader = { version = "0.9.8", features = ["map_physical_memory"] }
+bootloader = { version = "0.10.1", features = [] }
 byteorder = { version = "1.4", default-features = false, features = ["i128"] }
 bitflags = "1.2"
 conquer-once = { version = "0.3.2", default-features = false }

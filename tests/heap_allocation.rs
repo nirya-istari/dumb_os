@@ -17,13 +17,13 @@ use alloc::prelude::v1::*;
 
 entry_point!(main);
 
-fn main(boot_info: &'static BootInfo) -> ! {
+fn main(boot_info: &'static mut BootInfo) -> ! {
 
     dumb_os::init();
-    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
+    let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset.into_option().expect("physical_memory_offset"));
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator = unsafe {
-        BootInfoBumpAllocator::init(&boot_info)
+        BootInfoBumpAllocator::init(boot_info)
     };
     allocator::init_heap(&mut mapper, &mut frame_allocator)
         .expect("Failed to initialize heap");
