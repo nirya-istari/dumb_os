@@ -14,12 +14,12 @@ static WAKER: AtomicWaker = AtomicWaker::new();
 pub(crate) fn add_scancode(scancode: u8) {
     if let Ok(queue) = SCANCODE_QUEUE.try_get() {
         if let Err(_) = queue.push(scancode) {
-            serial_println!("WARNING scancode queue is full. Dropping input");
+            println!("WARNING scancode queue is full. Dropping input");
         } else {
             WAKER.wake();
         }
     } else {
-        serial_println!("WARNING scancode queue uninitialized.");
+        println!("WARNING scancode queue uninitialized.");
     }
 }
 

@@ -34,6 +34,7 @@ lazy_static! {
 }
 
 pub fn init() {
+    println!("intializing idt");
     IDT.load();
 }
 
@@ -91,10 +92,10 @@ extern "x86-interrupt" fn page_fault_handler(
     println!("Error Code: {:?}", error_code);
     println!("{:?}", stack_frame);
 
-    serial_println!("EXCEPTION: PAGE FAULT");
-    serial_println!("Accessed Address: {:?}", Cr2::read());
-    serial_println!("Error Code: {:?}", error_code);
-    serial_println!("{:?}", stack_frame);
+    println!("EXCEPTION: PAGE FAULT");
+    println!("Accessed Address: {:?}", Cr2::read());
+    println!("Error Code: {:?}", error_code);
+    println!("{:?}", stack_frame);
 
     halt_loop();
 }
@@ -124,7 +125,7 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
 extern "x86-interrupt" fn primary_ata_handler(_stack_frame: InterruptStackFrame) {
     let mut pics = PICS.lock();
-    serial_println!("primary ata handler");
+    println!("primary ata handler");
     ata::interrupt( ata::BusKind::Primary); 
     
     unsafe {
@@ -135,7 +136,7 @@ extern "x86-interrupt" fn primary_ata_handler(_stack_frame: InterruptStackFrame)
 
 extern "x86-interrupt" fn secondary_ata_handler(_stack_frame: InterruptStackFrame) {
     let mut pics = PICS.lock();
-    serial_println!("secondary ata handler");
+    println!("secondary ata handler");
     unsafe {
         pics.notify_end_of_interrupt(InterruptIndex::SecondaryATA.as_u8());
     }

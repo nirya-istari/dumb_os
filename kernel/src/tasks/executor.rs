@@ -74,9 +74,9 @@ impl Executor {
 
             let task_id = task.id;
             if let Some(ref desc) = task.desc {
-                serial_println!("new task: {}", desc);
+                println!("new task: {}", desc);
             } else {
-                serial_println!("new task: {:?}", task_id)
+                println!("new task: {:?}", task_id)
             }
             tasks.insert(task_id, task);
             task_queue.push(task_id).expect("Task queue overflowwing");
@@ -89,7 +89,7 @@ impl Executor {
                 None => continue,
             };
             if let Some(ref desc) = task.desc {
-                serial_println!("running task: {}", desc);
+                println!("running task: {}", desc);
             }
             let waker: &mut Waker = waker_cache
                 .entry(task_id)
@@ -99,9 +99,9 @@ impl Executor {
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
                     if let Some(ref desc) = task.desc {
-                        serial_println!("task completed: {}", desc);
+                        println!("task completed: {}", desc);
                     } else {
-                        serial_println!("task completed: {:?}", task_id);
+                        println!("task completed: {:?}", task_id);
                     }
                     // I think NLL saves us here. But I have no idea how this works re. lifetimes.
 
@@ -122,7 +122,7 @@ impl Executor {
 
             match task.poll(&mut context) {
                 Poll::Ready(()) => {
-                    serial_println!("Task {:?} completed.", task_id);
+                    println!("Task {:?} completed.", task_id);
                 }
                 Poll::Pending => {
                     self.task_queue.push(task_id).expect("Tasks queue is full.");

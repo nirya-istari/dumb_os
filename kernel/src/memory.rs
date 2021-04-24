@@ -48,7 +48,7 @@ pub fn print_memory(physical_memory_offset: u64) {
 
     for (i, entry) in page_table.iter().enumerate() {
         if entry.is_unused() == false {
-            serial_println!("L4 {}: {:?}", i, entry);
+            println!("L4 {}: {:?}", i, entry);
 
             let phys = entry.frame().unwrap().start_address();
             let virt = phys.as_u64() + physical_memory_offset;
@@ -57,7 +57,7 @@ pub fn print_memory(physical_memory_offset: u64) {
 
             for (j, l3_entry) in l3_table.iter().enumerate() {
                 if !l3_entry.is_unused() {
-                    serial_println!("  L3  {}: {:?}", j, l3_entry);
+                    println!("  L3  {}: {:?}", j, l3_entry);
 
                     let phys = l3_entry.frame().unwrap().start_address();
                     let virt = phys.as_u64() + physical_memory_offset;
@@ -68,7 +68,7 @@ pub fn print_memory(physical_memory_offset: u64) {
                         if !l2_entry.is_unused()
                             && !l2_entry.flags().contains(PageTableFlags::HUGE_PAGE)
                         {
-                            serial_println!("    L2 {}: {:?}", k, l2_entry);
+                            println!("    L2 {}: {:?}", k, l2_entry);
                         }
                     }
                 }

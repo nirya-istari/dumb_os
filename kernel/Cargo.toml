@@ -8,6 +8,10 @@ edition = "2018"
 default = ["linked_list_allocator"]
 epsilon_allocator = []
 
+[package.metadata.bootloader]
+map-physical-memory = true
+physical-memory-offset = "0x0000_4000_0000_0000"
+
 [package.metadata.bootimage]
 test-args = [
     "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
@@ -23,11 +27,13 @@ test-timeout = 300
 
 [dependencies]
 
+gimli = { version = "0.23", default-features = false, features = [] }
+bitflags = "1.2"
 bootloader = { version = "0.10.1", features = [] }
 byteorder = { version = "1.4", default-features = false, features = ["i128"] }
-bitflags = "1.2"
 conquer-once = { version = "0.3.2", default-features = false }
 crossbeam = { version = "0.8", default-features = false, features = ["alloc"] }
+field-offset = "0.3"
 futures = { version = "0.3", default-features = false, features = ["async-await", "alloc"] }
 lazy_static = { version = "1.0", features = ["spin_no_std"]}
 linked_list_allocator = { version = "0.8.11", optional = true }
@@ -35,13 +41,11 @@ pc-keyboard = "0.5.0"
 pic8259_simple = "0.2"
 rand = { version = "0.8", default-features = false }
 rand_pcg = "0.3"
+smallvec = { version = "1.6", default-features = false, features = [ "const_generics" ] }
 spin = "0.5.2"
-uart_16550 = "0.2"
+ux = { version = "0.1", default-features = false }
 volatile = "0.2"
 x86_64 = "0.14.0"
-field-offset = "0.3"
-ux = { version = "0.1", default-features = false }
-smallvec = { version = "1.6", default-features = false, features = [ "const_generics" ] }
 
 [[test]]
 name = "should_panic"

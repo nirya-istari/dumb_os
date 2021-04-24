@@ -5,8 +5,9 @@ use x86_64::structures::tss::TaskStateSegment;
 use x86_64::structures::gdt::{GlobalDescriptorTable, Descriptor, SegmentSelector};
 use x86_64::instructions::segmentation::set_cs;
 use x86_64::instructions::tables::load_tss;
-
 use lazy_static::lazy_static;
+
+use crate::prelude::*;
 
 pub const DOUBLE_FAULT_IST_INDEX: u16 = 0;
 
@@ -44,7 +45,7 @@ struct Selectors {
 }
 
 pub fn init() {
-
+    println!("initializing gdt");
     GDT.0.load();
     unsafe {
         set_cs(GDT.1.code_selector);

@@ -6,7 +6,7 @@
 
 use core::panic::PanicInfo;
 use volatile::Volatile;
-use dumb_os::serial_print;
+use dumb_os::print;
 use dumb_os::qemu::{ExitCode, exit_qemu};
 use lazy_static::lazy_static;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
@@ -22,21 +22,23 @@ lazy_static! {
         idt
     };
 }
+
 fn init_test_idt() {
     TEST_IDT.load();
 }
+
 extern "x86-interrupt" fn test_double_fault_handler(
     _stack_frame: InterruptStackFrame,
     _error_code: u64,
 ) -> ! {
-    serial_print!("[ok]\n");
+    print!("[ok]\n");
     exit_qemu(ExitCode::Success);
     loop {}
 }
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    serial_print!("stack_overflow::stack_overflow... ");
+    print!("stack_overflow::stack_overflow... ");
 
     dumb_os::gdt::init();
     init_test_idt();

@@ -25,6 +25,7 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 #[global_allocator]
 static ALLOCATOR: EpsilonAllocatorLocked = EpsilonAllocatorLocked::new();
 
+#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout);
@@ -40,7 +41,7 @@ pub fn init_heap(
         let heap_start_page = Page::containing_address(heap_start);
         let heap_last_page = Page::containing_address(heap_last_addr);
         Page::range_inclusive(heap_start_page, heap_last_page)
-    };
+    };    
 
     for page in page_range {
         let frame = frame_allocator

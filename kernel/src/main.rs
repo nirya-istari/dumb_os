@@ -8,19 +8,21 @@
 #![reexport_test_harness_main = "test_main"]
 
 extern crate alloc;
+
 use alloc::prelude::v1::*;
 use alloc::format;
 
 use core::panic::PanicInfo;
 
-use bootloader::{entry_point, BootInfo};
+use bootloader::{entry_point, boot_info::{BootInfo, Optional}};
 use rand::{Rng, SeedableRng};
 use rand::prelude::*;
 use rand_pcg::Pcg64;
 use x86_64::VirtAddr;
 
-use dumb_os::memory::BootInfoBumpAllocator;
-use dumb_os::prelude::*;
+use dumb_os::io::{Write, stdout};
+use dumb_os::{memory::BootInfoBumpAllocator};
+use dumb_os::{print, println};
 use dumb_os::tasks::executor::Executor;
 use dumb_os::tasks::keyboard::print_keypresses;
 use dumb_os::tasks::timer;
@@ -41,19 +43,35 @@ pub extern "C" fn __impl_start(boot_info: &'static bootloader::boot_info::BootIn
 }*/
 
 fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
-    // Same seed for testing
     let mut rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
-
+    
     let physical_memory_offset = VirtAddr::new(
         bootinfo
             .physical_memory_offset
             .into_option()
             .expect("no physical memory offset")
     );
-
-    println!("Hello World{}", "!");
+    
 
     dumb_os::init();
+
+    print!("Filling in frame buffer...");
+    let mut fb = core::mem::replace(&mut bootinfo.framebuffer, Optional::None)
+        .into_option().unwrap();
+    let info = fb.info();
+
+    for (r, row) in fb.buffer_mut().chunks_mut(info.stride).enumerate() {
+        for (c, pixel) in row.chunks_mut(info.bytes_per_pixel).take(info.vertical_resolution).enumerate() {
+            pixel[0] = ((r * 255) / info.vertical_resolution) as u8;
+            pixel[1] = ((c * 255) / info.horizontal_resolution) as u8;
+        }
+    }
+    println!(" OK");
+
+    // Same seed for testing
+    
+
+
 
     use x86_64::registers::control::Cr3;
 
@@ -62,13 +80,21 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
         "Level 4 page table at:{:?}",
         level_4_page_table.start_address()
     );
-    // serial_println!("{:#?}", bootinfo);
+    // println!("{:#?}", bootinfo);
 
+    print!("Initializing Page mapper...");
     let mut mapper = unsafe { dumb_os::memory::init(physical_memory_offset) };
+    println!(" OK");
 
+    print!("Initializing frame allocator");
     let mut frame_allocator = unsafe { BootInfoBumpAllocator::init(bootinfo) };
+    println!(" OK");
 
+    panic!("Testing backtrace");
+
+    print!("Initializing heap");
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("Heap allocation failed");
+    println!(" OK");
 
     #[cfg(test)]
     test_main();
@@ -120,15 +146,21 @@ async fn wait_and_print(i: u64) {
 }
 
 /// This function is called on panic.
-#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("{}", info);
+    // We're panicing nothing else will be printing.
+    let stdout = stdout();
+    let mut out = unsafe { stdout.break_lock() };
+
+    writeln!(out, "{}", info).ok();
+    writeln!(out, "Stack track:").ok();
     dumb_os::halt_loop();
 }
 
-#[cfg(test)]
+
+/* #[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     dumb_os::test_panic_handler(info)
 }
+ */

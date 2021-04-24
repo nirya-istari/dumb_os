@@ -182,15 +182,15 @@ pub async fn ata_main() {
             drive_head_register
         );
     }
-    serial_println!("Busses: {:#?}", buses);
+    println!("Busses: {:#?}", buses);
     let (kind, drive) = selected.expect("not drives avaliable");
-    serial_println!("Using {:?}, {:?}", kind, drive);
+    println!("Using {:?}, {:?}", kind, drive);
     let bus = buses.iter_mut().find(|b| b.kind == kind)
         .expect("WAT");
 
     match bus.read_sector(drive, LbaAddr::zero()).await {
         Ok(vec) => dump_hex(&vec),
-        Err(err) => serial_println!("Error reading: {}", err)
+        Err(err) => println!("Error reading: {}", err)
     };
 }
 
@@ -201,20 +201,20 @@ fn dump_hex<B>(data: &B)
     let chunk_size = 16;
 
     for (r, row) in data.chunks(chunk_size).enumerate() {
-        serial_print!("{:08x}: ", r * chunk_size);
+        print!("{:08x}: ", r * chunk_size);
         for word in row.chunks(2) {
-            serial_print!("{:02x}{:02x} ", word[0], word[1]);
+            print!("{:02x}{:02x} ", word[0], word[1]);
         }
-        serial_println!("  ");
+        println!("  ");
         for byte in row {
             let ch = if !byte.is_ascii() || byte.is_ascii_control() {
                 '.'
             } else {
                 *byte as char
             };
-            serial_print!("{}", ch);
+            print!("{}", ch);
         }
-        serial_println!();
+        println!();
     }
 }
 
@@ -250,15 +250,13 @@ impl Bus {
         poll_fn(|cx| self.poll_interrupt(cx)).await
     }
 
-    fn wait_for_drq(&mut self) -> Result<(), ErrorRegister> {
-        // Lets just poll DRQ
-        loop {
-            let status = unsafe { self.status().read() };
-            if status.contains(StatusRegister::ERR) {
-                return self.check_error();
-            }
-            serial_println!("Waiting for DRQ. Status = {:?}", status);
+    async fn wait_for_drq(&mut self) -> Result<(), ErrorRegister> {
+        self.wait_for_interrupt().await;
+        let status = unsafe { self.status().read() };
+        if status.contains(StatusRegister::ERR) {
+            self.check_error()?;
         }
+        Ok(())
     }
 
     /// Primary: 0x1F0
@@ -290,15 +288,6 @@ impl Bus {
                 self.cylinder_low_register().read(),
                 self.cylinder_hi_register().read(),
             ])
-        }
-    }
-
-    /// Write value to cylinder_low to cylinder_hi 
-    fn write_cylinders(&mut self, value: u16) {
-        let [lo, hi] = value.to_le_bytes();
-        unsafe {
-            self.cylinder_low_register().write(lo);
-            self.cylinder_hi_register().write(hi);
         }
     }
 
@@ -341,7 +330,7 @@ impl Bus {
 
     fn soft_reset(&mut self) {
         unsafe { 
-            serial_println!("soft resetting bus {}", self.kind);
+            println!("soft resetting bus {}", self.kind);
             self.device_control_register().write(DeviceControlRegister::SRST);
             crate::delay(5);
             self.device_control_register().write(DeviceControlRegister::empty());
@@ -376,7 +365,7 @@ impl Bus {
         let bytes = sector_count as usize * SECTOR_SIZE;
         let mut sectors: Vec<u8> = Vec::new();
         sectors.try_reserve_exact(bytes)?;
-        serial_println!("allocated: {}", sectors.len());
+        println!("allocated: {}", sectors.len());
 
         unsafe {
             sectors.set_len(sectors.capacity());
@@ -386,7 +375,7 @@ impl Bus {
         if status.contains(StatusRegister::BSY) || status.contains(StatusRegister::DRQ) {
             return Err(ReadError::DiskBusy);
         }
-        serial_println!("status: {:?}", status);
+        println!("status: {:?}", status);
 
 
         unsafe {
@@ -398,7 +387,7 @@ impl Bus {
         }        
         
         let status = unsafe { self.alt_status().read() };        
-        serial_println!("after drive select. status: {:?}", status);
+        println!("after drive select. status: {:?}", status);
 
         unsafe {
             
@@ -406,30 +395,30 @@ impl Bus {
 
             self.sector_count_register().write(SectorCountRegister(sector_count));
             let status =  { self.alt_status().read() };        
-            serial_println!("after sector_count_register. status: {:?}", status);
+            println!("after sector_count_register. status: {:?}", status);
 
             self.sector_number_register().write(sector_number);
             let status =  { self.alt_status().read() };        
-            serial_println!("after sector_number_register. status: {:?}", status);
+            println!("after sector_number_register. status: {:?}", status);
             
             self.cylinder_low_register().write(cylinder_low);
             let status =  { self.alt_status().read() };        
-            serial_println!("after cylinder_low_register. status: {:?}", status);
+            println!("after cylinder_low_register. status: {:?}", status);
             
             self.cylinder_hi_register().write(cylinder_hi);
             let status =  { self.alt_status().read() };        
-            serial_println!("after cylinder_hi_register. status: {:?}", status);
+            println!("after cylinder_hi_register. status: {:?}", status);
             
 
             self.command().write(AtaCommand::ReadSectors);
-            serial_println!("sent READ SECTORS command");
+            println!("sent READ SECTORS command");
             let status = { self.alt_status().read() };        
-            serial_println!("after command . status: {:?}", status);
+            println!("after command . status: {:?}", status);
             
 
             self.check_error()?;
 
-            self.wait_for_drq()?;
+            self.wait_for_drq().await?;
 
             read_sector(self.data_register(), &mut sectors[..]);
 

@@ -1,8 +1,5 @@
 // src/lib.rs
 
-// TMP:
-#![allow(dead_code)]
-
 #![no_std]
 #![cfg_attr(test, no_main)]
 #![feature(custom_test_frameworks)]
@@ -13,6 +10,8 @@
 #![feature(alloc_prelude)]
 #![feature(asm)]
 #![feature(try_reserve)]
+#![feature(slice_internals)]
+#![feature(lang_items)]
 
 extern crate alloc;
 
@@ -27,16 +26,23 @@ pub mod irq;
 pub mod memory;
 pub mod prelude;
 pub mod qemu;
-pub mod serial;
 pub mod sync;
 pub mod tasks;
-pub mod vga_buffer;
+pub mod io;
+pub mod error;
+pub mod uart;
 
 pub fn init() {
+    io::stdio_init();    
     gdt::init();
     irq::init();
+    print!("Initialzing 8256 PICs...");
     unsafe { irq::pic_8256::PICS.lock().initialize() };
+    println!(" OK");
+
+    print!("Enabling interrupts...");
     x86_64::instructions::interrupts::enable();
+    println!(" OK");
 }
 
 pub trait Testable {
@@ -48,14 +54,14 @@ where
     T: Fn(),
 {
     fn run(&self) -> () {
-        serial_print!("{}...\t", core::any::type_name::<T>());
+        print!("{}...\t", core::any::type_name::<T>());
         self();
-        serial_println!("[ok]");
+        println!("[ok]");
     }
 }
 
 pub fn test_runner(tests: &[&dyn Testable]) {
-    serial_println!("Running {} tests", tests.len());
+    println!("Running {} tests", tests.len());
     for test in tests {
         test.run();
     }
@@ -63,8 +69,8 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 }
 
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    serial_println!("[failed]\n");
-    serial_println!("Error: {}\n", info);
+    println!("[failed]\n");
+    println!("Error: {}\n", info);
     qemu::exit_qemu(qemu::ExitCode::Failed);
     halt_loop();
 }
