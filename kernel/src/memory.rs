@@ -3,15 +3,9 @@
 
 use crate::prelude::*;
 
-use bootloader::{BootInfo, boot_info::MemoryRegionKind};
-use x86_64::{
-    registers::control::Cr3,
-    structures::paging::{
-        FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags,
-        PhysFrame, Size4KiB,
-    },
-    PhysAddr, VirtAddr,
-};
+use bootloader::{BootInfo, boot_info::{MemoryRegion, MemoryRegionKind}};
+use smallvec::SmallVec;
+use x86_64::{PhysAddr, VirtAddr, registers::control::Cr3, structures::paging::{FrameAllocator, Mapper, OffsetPageTable, Page, PageSize, PageTable, PageTableFlags, PhysFrame, Size4KiB, frame::PhysFrameRange}};
 
 pub unsafe fn init(physical_addr_offset: VirtAddr) -> OffsetPageTable<'static> {
     let level_4_page_table = active_level_4_table(physical_addr_offset);
@@ -87,37 +81,61 @@ where
     }
 }
 
-pub struct BootInfoBumpAllocator {
-    bootinfo: &'static BootInfo,
-    next: usize,
+#[derive(Debug)]
+pub struct BootInfoBumpAllocator {    
+    current_region: usize,
+    current_offset: u64,
+    regions: SmallVec<[MemoryRegion; 32]>,
 }
 
 impl BootInfoBumpAllocator {
-    pub unsafe fn init(bootinfo: &'static BootInfo) -> BootInfoBumpAllocator {
-        BootInfoBumpAllocator { bootinfo, next: 0 }
+    pub unsafe fn init(bootinfo: &BootInfo) -> BootInfoBumpAllocator {
+        Self {
+            current_region: 0,
+            current_offset: 0,
+            regions: bootinfo.memory_regions.iter()
+                .filter(|region| region.kind == MemoryRegionKind::Usable)
+                .take(32)            
+                .cloned()                
+                .collect()
+        }
     }
 
-    fn usable_frames(&self) -> impl Iterator<Item = PhysFrame> {
-        // iter over all memory regions
-        self.bootinfo.memory_regions.iter()
-            // Filter by Usuable memory regions
-            .filter(|region| region.kind == MemoryRegionKind::Usable)
-            // Extract the ranges and iterator over frame numbers
-            .flat_map(|region| region.start .. region.end)
-            // Convert frame numbers to addresses
-            .map(|addr| PhysAddr::new(addr))
-            // Create PhysFrame value from address
-            .map(|address|  PhysFrame::containing_address(address))        
+    fn get_next_frame(&self) -> Option<PhysFrame<Size4KiB>>         
+    {        
+        if let Some(region) = self.regions.get(self.current_region)  {
+            let next = region.start + self.current_offset;
+            if next < region.end {
+                
+                return Some(PhysFrame::containing_address(PhysAddr::new(next)));
+            }
+        }
+        return None;
+    }
+
+    fn move_next(&mut self) {
+        if let Some(region) = self.regions.get(self.current_region) {
+            let next_offset = self.current_offset + Size4KiB::SIZE;
+            if region.start + next_offset >= region.end {
+                self.current_region += 1;
+                self.current_offset = 0;                
+            } else {
+                self.current_offset = next_offset;
+            }
+        }
     }
 }
 
 unsafe impl FrameAllocator<Size4KiB> for BootInfoBumpAllocator {
     fn allocate_frame(&mut self) -> Option<PhysFrame<Size4KiB>> {
-        let next = self.usable_frames().nth(self.next);
+        println!("allocating frame");
+        let next = self.get_next_frame();
+        println!("next: {:?}", next);
         if next.is_some() {            
-            self.next += 1;
+            self.move_next();
+            println!("updated to: {:?}", self);
         }
-        next
+        next        
     }
 }
 

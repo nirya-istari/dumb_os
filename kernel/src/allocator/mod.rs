@@ -14,6 +14,8 @@ use x86_64::{
     VirtAddr,
 };
 
+use crate::prelude::*;
+
 pub const HEAP_START: u64 = 0x4444_4444_0000;
 pub const HEAP_SIZE: u64 = 64 * 1024; // 64 KiB
 
@@ -41,7 +43,8 @@ pub fn init_heap(
         let heap_start_page = Page::containing_address(heap_start);
         let heap_last_page = Page::containing_address(heap_last_addr);
         Page::range_inclusive(heap_start_page, heap_last_page)
-    };    
+    };
+    println!("page_range = {:?}", page_range);
 
     for page in page_range {
         let frame = frame_allocator
@@ -51,6 +54,7 @@ pub fn init_heap(
         unsafe {
             mapper.map_to(page, frame, flags, frame_allocator)?.flush();
         }
+        println!("mapped page {:?} to {:?}", page.start_address(), frame.start_address());
     }
 
     let start = page_range.start.start_address();

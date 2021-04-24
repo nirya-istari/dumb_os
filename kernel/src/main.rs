@@ -20,7 +20,7 @@ use rand::prelude::*;
 use rand_pcg::Pcg64;
 use x86_64::VirtAddr;
 
-use dumb_os::io::{Write, stdout};
+use dumb_os::{allocator::HEAP_SIZE, io::{Write, stdout}};
 use dumb_os::{memory::BootInfoBumpAllocator};
 use dumb_os::{print, println};
 use dumb_os::tasks::executor::Executor;
@@ -45,15 +45,15 @@ pub extern "C" fn __impl_start(boot_info: &'static bootloader::boot_info::BootIn
 fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     let mut rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
     
+    dumb_os::init();
+    check_bootinfo(bootinfo);
+
     let physical_memory_offset = VirtAddr::new(
         bootinfo
             .physical_memory_offset
             .into_option()
             .expect("no physical memory offset")
-    );
-    
-
-    dumb_os::init();
+    );    
 
     print!("Filling in frame buffer...");
     let mut fb = core::mem::replace(&mut bootinfo.framebuffer, Optional::None)
@@ -83,6 +83,7 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     // println!("{:#?}", bootinfo);
 
     print!("Initializing Page mapper...");
+
     let mut mapper = unsafe { dumb_os::memory::init(physical_memory_offset) };
     println!(" OK");
 
@@ -90,7 +91,6 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoBumpAllocator::init(bootinfo) };
     println!(" OK");
 
-    panic!("Testing backtrace");
 
     print!("Initializing heap");
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("Heap allocation failed");
@@ -115,6 +115,27 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
         .unwrap();     */
 
     executor.run()
+}
+
+fn check_bootinfo(bootinfo: &BootInfo) -> () {
+    if bootinfo.physical_memory_offset.as_ref().is_none() {
+        panic!("physical memory offset is required");
+    }
+    if bootinfo.rsdp_addr.as_ref().is_none() {
+        panic!("rsdp addr is required");
+    }
+    let mut usuable_bytes = 0;
+
+    for (i, region) in bootinfo.memory_regions.iter().enumerate() {
+        println!("Region {}: {:?}", i, region);
+        if region.kind == bootloader::boot_info::MemoryRegionKind::Usable {
+            usuable_bytes += region.end - region.start;
+        }
+    }
+    if usuable_bytes < HEAP_SIZE {
+        panic!("Not enough usuable memory. Require {}, have {}", HEAP_SIZE, usuable_bytes);
+    }
+    println!("Have {} bytes of memory", usuable_bytes)
 }
 
 async fn async_number() -> u32 {
