@@ -7,6 +7,8 @@ use field_offset::offset_of;
 
 use crate::prelude::*;
 
+mod tables;
+
 /// For documenatantive reasons.
 /// To copy a `Copy` field in Rust you simple put it in a block all to itself:
 /// ```

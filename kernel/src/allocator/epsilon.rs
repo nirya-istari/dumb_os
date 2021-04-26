@@ -1,7 +1,7 @@
 // src/allocator/epsilon.rs
 
 use core::alloc::{GlobalAlloc, Layout};
-use spin::Mutex;
+use spin::lock_api::Mutex;
 use x86_64::VirtAddr;
 
 pub struct EpsilonAllocatorLocked {
@@ -10,7 +10,7 @@ pub struct EpsilonAllocatorLocked {
 impl EpsilonAllocatorLocked {
     pub const fn new() -> EpsilonAllocatorLocked {
         EpsilonAllocatorLocked {
-            alloc: Mutex::new(None),
+            alloc: Mutex::const_new(spin::Mutex::new(()),  None),
         }
     }
 

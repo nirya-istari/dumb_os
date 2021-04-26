@@ -26,27 +26,71 @@ test-success-exit-code = 33         # (0x10 << 1) | 1
 test-timeout = 300
 
 [dependencies]
-
-gimli = { version = "0.23", default-features = false, features = [] }
 bitflags = "1.2"
-bootloader = { version = "0.10.1", features = [] }
-byteorder = { version = "1.4", default-features = false, features = ["i128"] }
-conquer-once = { version = "0.3.2", default-features = false }
-crossbeam = { version = "0.8", default-features = false, features = ["alloc"] }
 field-offset = "0.3"
-futures = { version = "0.3", default-features = false, features = ["async-await", "alloc"] }
-lazy_static = { version = "1.0", features = ["spin_no_std"]}
-linked_list_allocator = { version = "0.8.11", optional = true }
 pc-keyboard = "0.5.0"
 pic8259_simple = "0.2"
-rand = { version = "0.8", default-features = false }
 rand_pcg = "0.3"
-smallvec = { version = "1.6", default-features = false, features = [ "const_generics" ] }
-spin = "0.5.2"
-ux = { version = "0.1", default-features = false }
 volatile = "0.2"
 x86_64 = "0.14.0"
-desse = { version = "0.2", default-features = false, features = ["derive"] }
+
+[dependencies.bootloader]
+version = "0.10.1"
+features = []
+
+[dependencies.byteorder]
+version = "1.4"
+default-features = false
+features = ["i128"]
+
+[dependencies.conquer-once]
+version = "0.3.2"
+default-features = false
+
+[dependencies.crossbeam]
+version = "0.8"
+default-features = false
+features = ["alloc"]
+
+[dependencies.futures]
+version = "0.3"
+default-features = false
+features = ["async-await", "alloc"]
+
+[dependencies.lazy_static]
+version = "1.0"
+features = ["spin_no_std"]
+
+[dependencies.linked_list_allocator]
+version = "0.8.11"
+optional = true
+
+[dependencies.lock_api]
+version = "0.4"
+default-features = false
+
+[dependencies.spin]
+version = "0.9"
+default-features = false
+features = ["lock_api", "mutex", "spin_mutex"]
+
+[dependencies.serde]
+version = "1"
+default-features = false
+
+[dependencies.rand]
+version = "0.8"
+default-features = false
+features = ["alloc" ,"rand_chacha", "small_rng", "nightly"]
+
+[dependencies.smallvec]
+version = "1.6"
+default-features = false
+features = [ "const_generics" ]
+
+[dependencies.ux]
+version = "0.1"
+default-features = false
 
 [[test]]
 name = "should_panic"

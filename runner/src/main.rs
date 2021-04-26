@@ -3,7 +3,7 @@
 extern crate log;
 
 
-use std::{env, error::Error, fs, io, path::Path};
+use std::{env, io, path::Path};
 use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
@@ -97,7 +97,7 @@ async fn main() -> Result<(), i32> {
 
     
 
-    let ovmf_vars = env.cargo_manifest_dir.join("ovmf_vars.fd");    
+    // let ovmf_vars = env.cargo_manifest_dir.join("ovmf_vars.fd");    
 
     let mut qemu_command = Command::new("qemu-system-x86_64");
     qemu_command
@@ -106,8 +106,6 @@ async fn main() -> Result<(), i32> {
         .arg("-drive").arg(format!("if=ide,format=raw,file={}", kernel_image.display()))
         .arg("-serial").arg("stdio")
         .arg("-s");
-
-    
     
     let status = if is_test {
         qemu_command

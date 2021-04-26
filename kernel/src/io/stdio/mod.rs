@@ -5,7 +5,7 @@ use alloc::prelude::v1::*;
 use conquer_once::spin::{OnceCell};
 use interrupts::without_interrupts;
 use smallvec::SmallVec;
-use spin::{Mutex, MutexGuard};
+use spin::lock_api::{Mutex, MutexGuard};
 use x86_64::instructions::interrupts;
 
 use crate::uart::SerialPort;
