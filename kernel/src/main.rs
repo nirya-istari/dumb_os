@@ -9,20 +9,22 @@
 
 extern crate alloc;
 
-use alloc::prelude::v1::*;
 use alloc::format;
+use alloc::prelude::v1::*;
 
 use core::panic::PanicInfo;
 
-use bootloader::{entry_point, boot_info::{BootInfo, Optional}};
-use rand::{Rng, SeedableRng};
+use bootloader::{
+    boot_info::{BootInfo, Optional},
+    entry_point,
+};
 use rand::prelude::*;
+use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
 use x86_64::VirtAddr;
 
-use dumb_os::{allocator::HEAP_SIZE, io::{Write, stdout}};
-use dumb_os::{memory::BootInfoBumpAllocator};
-use dumb_os::{print, println};
+use dumb_os::allocator::HEAP_SIZE;
+use dumb_os::memory::BootInfoBumpAllocator;
 use dumb_os::tasks::executor::Executor;
 use dumb_os::tasks::keyboard::print_keypresses;
 use dumb_os::tasks::timer;
@@ -31,20 +33,13 @@ use dumb_os::{
     allocator,
     tasks::{executor::spawn, timer::sleep},
 };
-use dumb_os::disk::disk_main;
-
-
+use dumb_os::{print, println};
 
 entry_point!(kernel_main);
-/* #[export_name = "_start"]
-pub extern "C" fn __impl_start(boot_info: &'static bootloader::boot_info::BootInfo) -> ! {
-    let f: fn(&'static bootloader::boot_info::BootInfo) -> ! = kernel_main;
-    f(boot_info)
-}*/
 
 fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     let mut rng = Pcg64::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7ac28fa16a64abf96);
-    
+
     dumb_os::init();
     check_bootinfo(bootinfo);
 
@@ -52,16 +47,21 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
         bootinfo
             .physical_memory_offset
             .into_option()
-            .expect("no physical memory offset")
-    );    
+            .expect("no physical memory offset"),
+    );
 
     print!("Filling in frame buffer...");
     let mut fb = core::mem::replace(&mut bootinfo.framebuffer, Optional::None)
-        .into_option().unwrap();
+        .into_option()
+        .unwrap();
     let info = fb.info();
 
     for (r, row) in fb.buffer_mut().chunks_mut(info.stride).enumerate() {
-        for (c, pixel) in row.chunks_mut(info.bytes_per_pixel).take(info.vertical_resolution).enumerate() {
+        for (c, pixel) in row
+            .chunks_mut(info.bytes_per_pixel)
+            .take(info.vertical_resolution)
+            .enumerate()
+        {
             pixel[0] = ((r * 255) / info.vertical_resolution) as u8;
             pixel[1] = ((c * 255) / info.horizontal_resolution) as u8;
         }
@@ -69,9 +69,6 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     println!(" OK");
 
     // Same seed for testing
-    
-
-
 
     use x86_64::registers::control::Cr3;
 
@@ -91,7 +88,6 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     let mut frame_allocator = unsafe { BootInfoBumpAllocator::init(bootinfo) };
     println!(" OK");
 
-
     print!("Initializing heap");
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("Heap allocation failed");
     println!(" OK");
@@ -99,20 +95,25 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
+    let acpi = dumb_os::acpi::init(physical_memory_offset, bootinfo)
+        .map_err(|err| panic!("Failed to inialized acpi: {:?}", err));
+
     let mut executor = Executor::new();
 
     let (timer_task, _timer_handle) = unsafe { timer::init() };
 
     executor.spawn_task(timer_task).unwrap();
-    executor.spawn_task(Task::new(print_keypresses(), "print keypresses")).unwrap();
-    executor.spawn_task(Task::new(disk_main(), "disk main")).unwrap();
+    executor
+        .spawn_task(Task::new(print_keypresses(), "print keypresses"))
+        .unwrap();
+    // executor.spawn_task(Task::new(disk_main(), "disk main")).unwrap();
 
     executor
-        .spawn_task(Task::new(example_task::<Pcg64>(rng.gen()), "example task" ))
+        .spawn_task(Task::new(example_task::<Pcg64>(rng.gen()), "example task"))
         .unwrap();
-    /* executor
-        .spawn_task(Task::new(example_timer(rng.gen() ), "example timer"))
-        .unwrap();     */
+    // executor
+    // .spawn_task(Task::new(example_timer(rng.gen() ), "example timer"))
+    // .unwrap();
 
     executor.run()
 }
@@ -133,7 +134,10 @@ fn check_bootinfo(bootinfo: &BootInfo) -> () {
         }
     }
     if usuable_bytes < HEAP_SIZE {
-        panic!("Not enough usuable memory. Require {}, have {}", HEAP_SIZE, usuable_bytes);
+        panic!(
+            "Not enough usuable memory. Require {}, have {}",
+            HEAP_SIZE, usuable_bytes
+        );
     }
     println!("Have {} bytes of memory", usuable_bytes)
 }
@@ -167,21 +171,19 @@ async fn wait_and_print(i: u64) {
 }
 
 /// This function is called on panic.
+#[cfg(not(test))]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    use dumb_os::io::{stdout, Write};
     // We're panicing nothing else will be printing.
     let stdout = stdout();
     let mut out = unsafe { stdout.break_lock() };
-
     writeln!(out, "{}", info).ok();
-    writeln!(out, "Stack track:").ok();
     dumb_os::halt_loop();
 }
 
-
-/* #[cfg(test)]
+#[cfg(test)]
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     dumb_os::test_panic_handler(info)
 }
- */

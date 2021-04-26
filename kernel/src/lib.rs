@@ -11,12 +11,12 @@
 #![feature(asm)]
 #![feature(try_reserve)]
 #![feature(slice_internals)]
-#![feature(lang_items)]
-
+#![feature(num_as_ne_bytes)]
 extern crate alloc;
 
 use core::panic::PanicInfo;
 
+use io::stdout;
 use x86_64::instructions::port::Port;
 
 pub mod allocator;
@@ -31,6 +31,7 @@ pub mod tasks;
 pub mod io;
 pub mod error;
 pub mod uart;
+pub mod acpi;
 
 pub fn init() {
     io::stdio_init();    
@@ -69,8 +70,12 @@ pub fn test_runner(tests: &[&dyn Testable]) {
 }
 
 pub fn test_panic_handler(info: &PanicInfo) -> ! {
-    println!("[failed]\n");
-    println!("Error: {}\n", info);
+    use crate::io::Write;
+    let stdout = stdout();
+    let mut out = unsafe { stdout.break_lock() };
+
+    writeln!(out, "[failed]\n").ok();
+    writeln!(out, "Error: {}\n", info).ok();
     qemu::exit_qemu(qemu::ExitCode::Failed);
     halt_loop();
 }

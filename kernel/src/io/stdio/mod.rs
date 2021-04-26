@@ -222,3 +222,15 @@ macro_rules! println {
     ($fmt:expr, $($arg:tt)*) => ($crate::print!(
         concat!($fmt, "\n"), $($arg)*));   
 }
+
+#[test_case]
+fn test_println() {
+    println!("Hello, world");
+}
+
+#[test_case]
+fn test_println_many() {
+    for i in 0..=200 {
+        println!("line: {}", i);
+    }
+}

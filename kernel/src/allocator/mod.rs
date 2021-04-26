@@ -27,11 +27,11 @@ static ALLOCATOR: LockedHeap = LockedHeap::empty();
 #[global_allocator]
 static ALLOCATOR: EpsilonAllocatorLocked = EpsilonAllocatorLocked::new();
 
-#[cfg(not(test))]
 #[alloc_error_handler]
 fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout);
 }
+
 
 pub fn init_heap(
     mapper: &mut impl Mapper<Size4KiB>,

@@ -46,6 +46,7 @@ spin = "0.5.2"
 ux = { version = "0.1", default-features = false }
 volatile = "0.2"
 x86_64 = "0.14.0"
+desse = { version = "0.2", default-features = false, features = ["derive"] }
 
 [[test]]
 name = "should_panic"
