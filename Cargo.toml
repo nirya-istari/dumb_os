@@ -1,7 +1,5 @@
 [workspace]
 
 members = [
-    "kernel",
-    "builder",
-    "runner",
+    "kernel",    
 ]

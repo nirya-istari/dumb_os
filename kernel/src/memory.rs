@@ -50,8 +50,9 @@ pub fn print_memory(physical_memory_offset: u64) {
     let page_table = unsafe { active_level_4_table(VirtAddr::new(physical_memory_offset)) };
 
     for (i, entry) in page_table.iter().enumerate() {
+        let l4_addr = VirtAddr::new((i as u64) << 39);
         if entry.is_unused() == false {
-            println!("L4 {}: {:?}", i, entry);
+            println!("L4 {:x}: {:?}", l4_addr, entry);
 
             let phys = entry.frame().unwrap().start_address();
             let virt = phys.as_u64() + physical_memory_offset;
@@ -59,8 +60,12 @@ pub fn print_memory(physical_memory_offset: u64) {
             let l3_table: &PageTable = unsafe { &*ptr };
 
             for (j, l3_entry) in l3_table.iter().enumerate() {
+                let l3_addr = l4_addr + ((j as u64) << 30);
                 if !l3_entry.is_unused() {
-                    println!("  L3  {}: {:?}", j, l3_entry);
+                    println!("  L3 {:x}: {:?}", l3_addr, l3_entry);
+                    if l3_entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                        continue;
+                    }
 
                     let phys = l3_entry.frame().unwrap().start_address();
                     let virt = phys.as_u64() + physical_memory_offset;
@@ -68,10 +73,26 @@ pub fn print_memory(physical_memory_offset: u64) {
                     let l2_table: &PageTable = unsafe { &*ptr };
 
                     for (k, l2_entry) in l2_table.iter().enumerate() {
-                        if !l2_entry.is_unused()
-                            && !l2_entry.flags().contains(PageTableFlags::HUGE_PAGE)
-                        {
-                            println!("    L2 {}: {:?}", k, l2_entry);
+                        if !l2_entry.is_unused() {
+                            let l2_addr = l3_addr + ((k as u64) << 21);
+                            println!("    L2 {:x}: {:?}", l2_addr, l2_entry);
+                            if l2_entry.flags().contains(PageTableFlags::HUGE_PAGE) {
+                                continue;
+                            }
+
+                            let phys = l2_entry.frame().unwrap().start_address();
+                            let virt = phys.as_u64() + physical_memory_offset;
+                            let ptr = VirtAddr::new(virt).as_mut_ptr();
+                            let l1_table: &PageTable = unsafe { &*ptr };
+
+                            for (m, l1_entry) in l1_table.iter().enumerate() {
+                                if !l1_entry.is_unused() {
+                                    let l1_addr = l2_addr + ((m as u64) << 12);
+                                    // 0x4444_4444_0000
+                                    // 0x4444_6220_0000
+                                    println!("      L1 {:x}: {:?}", l1_addr, l1_entry);
+                                }
+                            }
                         }
                     }
                 }
@@ -147,3 +168,5 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoBumpAllocator {
         next
     }
 }
+
+struct VirtualMemoryAllocator {}

@@ -9,8 +9,9 @@
 
 extern crate alloc;
 
-use alloc::format;
+use alloc::{format, sync::Arc};
 use alloc::prelude::v1::*;
+use spin::lock_api::Mutex;
 
 use core::panic::PanicInfo;
 
@@ -23,7 +24,7 @@ use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
 use x86_64::VirtAddr;
 
-use dumb_os::allocator::HEAP_SIZE;
+use dumb_os::{allocator::HEAP_SIZE, memory::print_memory, memory_manager::MemoryManager};
 use dumb_os::memory::BootInfoBumpAllocator;
 use dumb_os::tasks::executor::Executor;
 use dumb_os::tasks::keyboard::print_keypresses;
@@ -95,8 +96,15 @@ fn kernel_main(bootinfo: &'static mut BootInfo) -> ! {
     #[cfg(test)]
     test_main();
 
-    let acpi = dumb_os::acpi::init(physical_memory_offset, bootinfo)
-        .map_err(|err| panic!("Failed to inialized acpi: {:?}", err));
+    let memory_manager = Arc::new(Mutex::new(MemoryManager {
+        mapper,
+        frame_allocator,
+    }));
+
+    let acpi = dumb_os::acpi::init(bootinfo, memory_manager.clone())
+        .unwrap_or_else(|err| panic!("Failed to inialized acpi: {:?}", err));
+
+    println!("{:#?}", acpi);
 
     let mut executor = Executor::new();
 

@@ -1,48 +1,177 @@
-use core::{fmt, mem, str::{self, Utf8Error}};
+use alloc::{prelude::v1::*, sync::Arc};
+use core::{fmt, mem, ptr::NonNull, result::Result::{Err, Ok}};
+use spin::lock_api::Mutex;
 
+use acpi::{sdt::Signature, AcpiHandler, AcpiTables, PciConfigRegions, PhysicalMapping, Sdt};
+use alloc::collections::BTreeMap;
 use bootloader::{boot_info::Optional, BootInfo};
-use mem::size_of;
-use x86_64::VirtAddr;
-use field_offset::offset_of;
+use volatile::Volatile;
+use x86_64::{PhysAddr, VirtAddr, structures::paging::{Mapper, Page, PageSize, PageTableFlags, PhysFrame, Size4KiB, mapper::MapToError}};
 
-use crate::prelude::*;
+use crate::{memory_manager::MemoryManager, prelude::*};
 
-mod tables;
+const ACPI_OFFSET: u64 = 0x500000000000;
 
-/// For documenatantive reasons.
-/// To copy a `Copy` field in Rust you simple put it in a block all to itself:
-/// ```
-/// let x: i32 = 42;
-/// let y: i32 = {val};
-/// assert_eq!(x, y);
-/// ```
-/// It's not *obvious* that this is why the braces are there. To make it obvious
-/// we create a mostly redeundent macro that describes why this is done.
-/// (The unaligned part is because calling `.clone()` on a unaligned field is
-/// undefined behavior. )
-macro_rules! copy_unaligned_field {
-    ($v:expr) => {{
-        $v
-    }};
+/// maps region with NO_CACHE set.
+#[derive(Debug, Clone)]
+struct MapAcpiAddr {
+    physical_offset: *const u8,
+    memory_manager: Arc<Mutex<MemoryManager>>,
 }
 
-pub fn init(physical_offset: VirtAddr, bootinfo: &mut BootInfo) -> Result<Acpi, AcpiInitError> {
-    if let Some(rdsp_addr) = mem::replace(&mut bootinfo.rsdp_addr, Optional::None).into_option() {
-        println!("rdsp_addr = {}", rdsp_addr);
-        let rsdp_ptr = (physical_offset.as_u64() + rdsp_addr) as *const RsdpDescriptor;
+impl AcpiHandler for MapAcpiAddr {
+    unsafe fn map_physical_region<T>(
+        &self,
+        physical_address: usize,
+        size: usize,
+    ) -> acpi::PhysicalMapping<Self, T> {
+        let mut lock = self.memory_manager.lock();
+        let MemoryManager {
+            ref mut mapper,
+            ref mut frame_allocator,
+        } = *lock;
+        let start_addr = PhysAddr::new(physical_address as u64);
+        let last_addr = PhysAddr::new((physical_address + size - 1) as u64);
 
-        let rsdp = unsafe { RsdpDescriptor::validate(rsdp_ptr) }?;
-        println!("rsdp = {:?}", rsdp);
+        let first_frame: PhysFrame<Size4KiB> = PhysFrame::containing_address(start_addr);
+        let last_frame = PhysFrame::containing_address(last_addr);
 
-        let rsdt = rsdp.rsdt(physical_offset);
-        println!("rsdt = {:?}", rsdt);
+        let range = PhysFrame::range_inclusive(first_frame, last_frame);
 
-        for entry in rsdt.get_entries() {
-            let header = DescriptionHeader::from_addr(physical_offset, *entry);
-            println!("header = {:?}", header);
+        // println!("Mappin {:?}", range);
+        for frame in range {
+            let addr = VirtAddr::from_ptr(self.physical_offset) + frame.start_address().as_u64();
+            let page = Page::containing_address(addr);
+
+            // println!("ACPI: mapping {:x} to {:x}", frame.start_address(), page.start_address());
+            let map_result = mapper
+                .map_to_with_table_flags(
+                    page,
+                    frame,
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::NO_CACHE
+                        | PageTableFlags::NO_EXECUTE,
+                    PageTableFlags::PRESENT
+                        | PageTableFlags::WRITABLE
+                        | PageTableFlags::NO_CACHE
+                        | PageTableFlags::NO_EXECUTE,
+                    frame_allocator,
+                );
+                match map_result {
+                    Ok(flush) => { flush.flush(); }
+                    Err(MapToError::PageAlreadyMapped(_)) => {
+                        // println!("{:x} already mapped", frame.start_address())
+                    }
+                    Err(err) => {
+                        panic!("Error mapping: {:?}", err);
+                    }
+                }
+                
         }
 
-        todo!()
+        PhysicalMapping {
+            physical_start: physical_address,
+            virtual_start: NonNull::new(
+                self.physical_offset.offset(physical_address as isize) as *mut T
+            )
+            .expect("physical_address mapped to 0x0"),
+            region_length: size,
+            mapped_length: range.count() * Size4KiB::SIZE as usize,
+            handler: self.clone(),
+        }
+    }
+
+    fn unmap_physical_region<T>(&self, _: &acpi::PhysicalMapping<Self, T>) {
+        // All memory is mapped so we don't need to unmap it.
+    }
+}
+
+struct DebugAcpiTables<'a>(&'a AcpiTables<MapAcpiAddr>);
+impl fmt::Debug for DebugAcpiTables<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let tables = self.0;
+        f.debug_struct("AcpiTables")
+            .field("revision", &tables.revision)
+            .field("sdts", &DebugSdtMap(&tables.sdts))
+            .field("dsdt", &tables.dsdt)
+            .field("ssdts", &tables.ssdts)
+            .finish()
+    }
+}
+
+struct DebugSdtMap<'a>(&'a BTreeMap<Signature, Sdt>);
+impl fmt::Debug for DebugSdtMap<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut d = f.debug_map();
+        for (signature, v) in self.0.iter() {
+            d.entry(signature, &DebugSdt(v));
+        }
+        d.finish()
+    }
+}
+
+struct DebugSdt<'a>(&'a Sdt);
+impl fmt::Debug for DebugSdt<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Sdt")
+            .field(
+                "physical_addr",
+                &format_args!("{:x}", self.0.physical_address),
+            )
+            .field("length", &self.0.length)
+            .field("validated", &self.0.validated)
+            .finish()
+    }
+}
+
+pub fn init(
+    bootinfo: &mut BootInfo,
+    memory_manager: Arc<Mutex<MemoryManager>>,
+) -> Result<Acpi, AcpiInitError> {
+    if let Some(rdsp_addr) = mem::replace(&mut bootinfo.rsdp_addr, Optional::None).into_option() {
+        let acpi_mapper = MapAcpiAddr {
+            physical_offset: ACPI_OFFSET as *const u8,
+            memory_manager: memory_manager.clone(),
+        };
+
+        let tables = unsafe {
+            AcpiTables::from_rsdp(acpi_mapper.clone(), rdsp_addr as usize)
+            .expect("failed to get ACPI tables")
+        };
+    
+
+        println!("{:#?}", DebugAcpiTables(&tables));
+
+        let pci_regions = PciConfigRegions::new(&tables).expect("Failed to get PCI regions");
+        println!("Enumerating PCI config regions");
+        let mut pci_devices: Vec<PciDevice> = Vec::new();
+
+        for segment in 0..32 {
+            for bus in 0..u8::MAX {
+                if let Some(addr) = pci_regions.physical_address(segment, bus, 0, 0) {
+                    println!(
+                        "  segment = {:x}, bus = {:x}, device = {:x}, addr = {:x}",
+                        segment, bus, 0, addr
+                    );
+                    for device in 0..=u8::MAX {
+                        if let Some(device) = check(
+                            &acpi_mapper,
+                            &pci_regions,
+                            segment,
+                            bus,
+                            device,
+                        ) {
+                            println!("    {:?}", device);
+                            pci_devices.push(device);
+                        }
+                    }
+                }
+            }
+        }
+        pci_devices.shrink_to_fit();
+
+        Ok(Acpi { pci_devices })
     } else {
         Err(AcpiInitError::NoRsdbAddr)
     }
@@ -50,308 +179,118 @@ pub fn init(physical_offset: VirtAddr, bootinfo: &mut BootInfo) -> Result<Acpi, 
 #[derive(Debug)]
 pub enum AcpiInitError {
     NoRsdbAddr,
-    InvalidRsdpSignatureUtf8Error(Utf8Error),
-    IncorrectRsdbSignature(&'static str),
-    // So orignally Acpi 1.0 wasn't going to be supported, but it turns out QEMU uses it.
-    Acpi10NotSupported,
-    RsdpChecksumInvalid,
 }
 
-#[repr(packed)]
-struct RsdpDescriptor {
-    // 1.0
-    signature: [u8; 8], /* offset: 0 */
-    checksum: u8,       /* offset: 8 */
-    oem_id: [u8; 6],    /* offset: 9 */
-    revision: u8,       /* offset: 15 */
-    rsdt_address: u32,  /* offset 16 */
-    // 2.0 and later
-    length: u32,           /* offset: 20 */
-    xsdt_address: u64,     /* offset: 24 */
-    extended_checksum: u8, /* offset: 32 */
-    _reserved: [u8; 3],    /* offset: 33 */
-}
-
-#[test_case]
-fn rsdp_descriptor_layout() {
-    assert_eq!(0, offset_of!(RsdpDescriptor => signature).get_byte_offset());
-    assert_eq!(8, offset_of!(RsdpDescriptor => checksum).get_byte_offset());
-    assert_eq!(9, offset_of!(RsdpDescriptor => oem_id).get_byte_offset());
-    assert_eq!(15, offset_of!(RsdpDescriptor => revision).get_byte_offset());
-    assert_eq!(16, offset_of!(RsdpDescriptor => rsdt_address).get_byte_offset());
-    assert_eq!(20, offset_of!(RsdpDescriptor => length).get_byte_offset());
-    assert_eq!(24, offset_of!(RsdpDescriptor => xsdt_address).get_byte_offset());
-    assert_eq!(32, offset_of!(RsdpDescriptor => extended_checksum).get_byte_offset());
-    assert_eq!(33, offset_of!(RsdpDescriptor => _reserved).get_byte_offset());
-}
-
-
-impl fmt::Debug for RsdpDescriptor {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut builder = f.debug_struct("RsdpDescriptor");
-        builder
-            .field("signature", unsafe {
-                // SAFETY: signature is checked in Self::validate so can safely and
-                // convert it.
-                &str::from_utf8_unchecked(&self.signature)
-            })
-            .field("checksum", &self.checksum)
-            .field("oem_id", &self.oem_id())
-            .field("revision", &self.revision)
-            .field(
-                "rsdt_address",
-                &format_args!("0x{:x}", copy_unaligned_field!(self.rsdt_address)),
-            );
-        if self.revision >= 2 {
-            builder
-                .field("length", &copy_unaligned_field!(self.length))
-                .field(
-                    "xdt_address",
-                    &format_args!("0x{:x}", copy_unaligned_field!(self.xsdt_address)),
-                )
-                .field("extended_checksum", &self.extended_checksum)
-                .finish()
-        } else {
-            // Don't print 2.0 parts of a 1.0 header.
-            builder.finish_non_exhaustive()
-        }
-    }
-}
-
-impl RsdpDescriptor {
-    unsafe fn validate(
-        ptr: *const RsdpDescriptor,
-    ) -> Result<&'static RsdpDescriptor, AcpiInitError> {
-        let rsdp: &'static RsdpDescriptor =  ptr.as_ref().unwrap();
-
-        let signature = str::from_utf8(&rsdp.signature[..])
-            .map_err(|err| AcpiInitError::InvalidRsdpSignatureUtf8Error(err))?;
-        if signature != "RSD PTR " {
-            return Err(AcpiInitError::IncorrectRsdbSignature(signature));
-        }
-
-        // Need to copy unaligned fields. Ref (&'s) cannot reference unaligned fields.
-        let checksum_1 = checksum_bytes(rsdp.signature)
-            .wrapping_add(rsdp.checksum)
-            .wrapping_add(checksum_bytes(rsdp.oem_id))
-            .wrapping_add(rsdp.revision)
-            .wrapping_add(checksum_bytes(copy_unaligned_field!(rsdp.rsdt_address).as_ne_bytes()));
-        if checksum_1 != 0 {
-            return Err(AcpiInitError::RsdpChecksumInvalid);
-        }
-
-        if rsdp.revision >= 2 {
-            // We technically need to add checksum_1. But it should be zero now.
-            let checksum_2 = checksum_bytes(copy_unaligned_field!(rsdp.length).as_ne_bytes())
-                .wrapping_add(checksum_bytes(copy_unaligned_field!(rsdp.xsdt_address).as_ne_bytes()))
-                .wrapping_add(rsdp.extended_checksum)
-                .wrapping_add(checksum_bytes(rsdp._reserved));
-            if checksum_2 != 0 {
-                return Err(AcpiInitError::RsdpChecksumInvalid);
-            }
-        }
-
-        Ok(rsdp)
-    }
-
-    /// Get a reference to the rsdp descriptor's oem id.
-    fn oem_id(&self) -> Result<&str, &[u8]> {
-        str_or_bytes(&self.oem_id)        
-    }
-
-    unsafe fn unsafe_rsdt(&'static self, physical_offset: VirtAddr) -> &'static Rdst {
-        let ptr = (physical_offset.as_u64() + self.rsdt_address as u64) as *const Rdst;
-        
-        ptr.as_ref().expect("Rdst cannot be mapped to 0x0")
-    }
-
-    fn rsdt(&'static self, physical_offset: VirtAddr) -> &'static Rdst {
-        let rsdt = unsafe { self.unsafe_rsdt(physical_offset) };
-        if &rsdt.signature != b"RSDT" {
-            panic!("rsdt signature invalid");
-        }
-
-        let ptr = rsdt as *const _ as *const u8;
-        let slice = unsafe {
-            core::slice::from_raw_parts(ptr, rsdt.length as usize)
-        };
-        let checksum = checksum_bytes(slice);
-        if checksum != 0 {
-            panic!("RSDT checksum is incorrect {}", checksum);
-        }        
-
-        rsdt
-    }
-}
-
-fn str_or_bytes(b: &[u8]) -> Result<&str, &[u8]> 
-{
-    let r: &[u8] = b.as_ref();
-    match str::from_utf8(r) {
-        Ok(s) => Ok(s),
-        Err(_) => Err(r),
-    }
-}
-
-fn checksum_bytes<B: AsRef<[u8]>>(b: B) -> u8 {
-    b.as_ref().iter().fold(0, |a, b| u8::wrapping_add(a, *b))
-}
-
-#[repr(C)]
-struct Rdst {
-    signature: [u8; 4],
-    length: u32,
-    revision: u8,
-    checksum: u8,
-    oem_id: [u8; 6],
-    oem_table_id: [u8; 8],
-    oem_revision: u32,
-    creator_id: [u8; 4],
-    creator_revision: u32,
-    // So this is start of an array of many values. But here we're 'pretend' it's length 1 because DST's are hard.
-    // and I don't want the compiler doing anything smart with a zero sized type.
-    entries: [u32; 1],
-}
-
-#[test_case]
-fn rsdt_layout() {
-    assert_eq!(0, offset_of!(Rdst => signature).get_byte_offset(), "signature");
-    assert_eq!(4, offset_of!(Rdst => length).get_byte_offset(), "length");
-    assert_eq!(8, offset_of!(Rdst => revision).get_byte_offset(), "revision");
-    assert_eq!(9, offset_of!(Rdst => checksum).get_byte_offset(), "checksum");
-    assert_eq!(10, offset_of!(Rdst => oem_id).get_byte_offset(), "oem_id");
-    assert_eq!(16, offset_of!(Rdst => oem_table_id).get_byte_offset(), "oem_table_id");
-    assert_eq!(24, offset_of!(Rdst => oem_revision).get_byte_offset(), "oem_revision");
-    assert_eq!(28, offset_of!(Rdst => creator_id).get_byte_offset(), "creator_id");
-    assert_eq!(32, offset_of!(Rdst => creator_revision).get_byte_offset(), "creator_revision");
-    assert_eq!(36, offset_of!(Rdst => entries).get_byte_offset(), "entries");
-}
-
-#[test_case]
-fn rsdt_entries_offset() {
-    const NUM_ENTRIES: usize = 1;
-    let test_table = Rdst {
-        signature: *b"RDST",
-        length: 36 + (NUM_ENTRIES * size_of::<u32>()) as u32, 
-        revision: 1,
-        checksum: 0x69,
-        oem_id: *b"TESTIN",
-        oem_table_id: *b"dumb_os ",
-        oem_revision: 12,
-        creator_id: *b"ME  ",
-        creator_revision: 1,
-        entries: [42],
-    };
-    let test_table_addr = (&test_table as *const Rdst) as i64;
-    let entries = test_table.get_entries();
-    let entries_addr = entries.as_ptr() as i64;
-    assert_eq!(36, entries_addr - test_table_addr, ".get_entries()");
-    assert_eq!(1, entries.len());
-}
-
-impl Rdst {
-
-    fn get_entries(&self) -> &[u32] {        
-
-        let entry_count = (self.length as usize - offset_of!(Rdst => entries ).get_byte_offset()) / size_of::<u32>();
-        // 36 is aligned so this fine.
-        let entry_ptr = {&self.entries[0]} as *const u32;
-        assert_eq!((self as *const _ as u64) % 4, 0);
-        assert_eq!((self as *const _ as u64) + 36, entry_ptr as u64);
-        assert_eq!((entry_ptr as u64) % 4, 0);
-        
-        
-        unsafe {            
-            core::slice::from_raw_parts(entry_ptr, entry_count)
-        }
-    }
-
-}
-
-impl fmt::Debug for Rdst {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Rdst")
-            .field("signature", &str::from_utf8(&self.signature))
-            .field("length", &{self.length} )
-            .field("revision", &self.revision)
-            .field("checksum", &self.checksum)
-            .field("oem_id", &str_or_bytes(&self.oem_id))
-            .field("oem_table_id", &str_or_bytes(&self.oem_table_id))
-            .field("oem_revision", &{self.oem_revision})
-            .field("creator_id", &str_or_bytes(&self.creator_id))
-            .field("creator_revision", &{self.creator_revision})
-            .field("entries", &self.get_entries())
-            .finish()
-    }
-}
-
-/// Unique object in charge oc ACPI.
 #[derive(Debug)]
 pub struct Acpi {
-    rsdp: &'static RsdpDescriptor,
-    rsdt: &'static Rdst,
+    pci_devices: Vec<PciDevice>,
 }
 
-
-#[repr(C)]
-struct DescriptionHeader {
-    signature: [u8; 4],
-    length: u32,
-    revision: u8,
-    checksum: u8,
-    oem_id: [u8; 6],
-    oem_table_id: [u8; 8],
-    oem_revision: u32,
-    creator_id: [u8; 4],
-    creator_revision: u32,
+#[derive(Debug)]
+struct PciDevice {
+    vendor_id: u16,
+    device_id: u16,
+    root_header_type: u8,
+    functions: Vec<PciFunction>,
 }
 
-#[test_case]
-fn description_header_layout() {
-    assert_eq!(0, offset_of!(DescriptionHeader => signature).get_byte_offset(), "signature");
-    assert_eq!(4, offset_of!(DescriptionHeader => length).get_byte_offset(), "length");
-    assert_eq!(8, offset_of!(DescriptionHeader => revision).get_byte_offset(), "revision");
-    assert_eq!(9, offset_of!(DescriptionHeader => checksum).get_byte_offset(), "checksum");
-    assert_eq!(10, offset_of!(DescriptionHeader => oem_id).get_byte_offset(), "oem_id");
-    assert_eq!(16, offset_of!(DescriptionHeader => oem_table_id).get_byte_offset(), "oem_table_id");
-    assert_eq!(24, offset_of!(DescriptionHeader => oem_revision).get_byte_offset(), "oem_revision");
-    assert_eq!(28, offset_of!(DescriptionHeader => creator_id).get_byte_offset(), "creator_id");
-    assert_eq!(32, offset_of!(DescriptionHeader => creator_revision).get_byte_offset(), "creator_revision");
+#[derive(Debug)]
+struct PciFunction {
+    classs: u8,
+    subclass: u8,
+    prog_if: u8,
+    revision_id: u8,
+    config_space: PhysFrame<Size4KiB>,
 }
 
-impl fmt::Debug for DescriptionHeader {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("DescriptionHeader")
-            .field("signature", &str_or_bytes(&self.signature))
-            .field("length", &self.length)
-            .field("revision", &self.revision)
-            .field("checksum", &self.checksum)
-            .field("oem_id", &str_or_bytes(&self.oem_id))
-            .field("oem_table_id", &str_or_bytes(&self.oem_table_id))
-            .field("oem_revision", &self.revision)
-            .field("creator_id", &str_or_bytes(&self.creator_id))
-            .field("creator_revision", &self.creator_revision)
-            .finish()
-    }
+/// Memory mapped PCI config space.
+#[repr(C, align(4096))]
+struct PciConfigSpace {
+    // Register 0
+    vendor_id: Volatile<u16>,
+    device_id: Volatile<u16>,
+    // Register 1
+    command: Volatile<u16>,
+    status: Volatile<u16>,
+    // Register 2
+    revision_id: Volatile<u8>,
+    prog_if: Volatile<u8>,
+    subclass: Volatile<u8>,
+    class_code: Volatile<u8>,
+    // Register 3
+    cache_line_size: Volatile<u8>,
+    latency_timer: Volatile<u8>,
+    header_type: Volatile<u8>,
+    bist: Volatile<u8>,
+    // Base Addresses
+    base_addresses: [Volatile<u32>; 5],
+    cardbus_cis_pointer: Volatile<u32>,
+    // Register 0b
+    subsystem_vendor_id: Volatile<u16>,
+    subsystem_id: Volatile<u16>,
+    // Register 0c
+    expansion_rom_base_address: Volatile<u32>,
+    // Register 0d
+    capabilites_pointer: Volatile<u8>,
+    _reserved_0d_1: Volatile<u8>,
+    _reserved_0d_2: Volatile<u16>,
+    _reserved_0e: Volatile<u32>,
+    // Register 0f
+    interrupt_line: Volatile<u8>,
+    interrupt_pin: Volatile<u8>,
+    min_grant: Volatile<u8>,
+    max_latency: Volatile<u8>,
 }
 
+fn check(
+    acpi_handler: &impl AcpiHandler,
+    pci: &PciConfigRegions,
+    segment_group_no: u16,
+    bus: u8,
+    device: u8,
+) -> Option<PciDevice> {
+    let mut dev = PciDevice {
+        vendor_id: 0,
+        device_id: 0,
+        root_header_type: 0,
+        functions: Vec::new()        
+    };
 
-impl DescriptionHeader {
-    fn from_addr(physical_offset: VirtAddr, addr: u32) -> &'static DescriptionHeader {
-        let ptr = (physical_offset.as_u64() + addr as u64) as *const DescriptionHeader;
-        
+    for function in 0..=u8::MAX {
+        let address = pci.physical_address(segment_group_no, bus, device, function)?;    
+        let frame = PhysFrame::from_start_address( PhysAddr::new(address) )
+            .expect("PCI address not at start of frame");
 
-        let header = unsafe {ptr.as_ref()}.expect("description header at 0x0");
-        let checksum = unsafe {
-            checksum_bytes(&core::slice::from_raw_parts(ptr as *const u8, header.length as usize))
+        let config_space = unsafe { 
+            acpi_handler.map_physical_region::<PciConfigSpace>(address as usize, 4096)
         };
-        if checksum != 0 {
-            panic!("Descriotion header at {:x} checksum is invalid. signature = {:?}", addr, str_or_bytes(&header.signature));
+        
+        
+        let vendor_id = config_space.vendor_id.read();
+        if vendor_id == 0xFFFF {
+            return None;
         }
+        let device_id = config_space.device_id.read();
+        let header_type = config_space.header_type.read();
+        dev.functions.push(PciFunction {
+            classs: config_space.class_code.read(),
+            subclass: config_space.subclass.read(),
+            prog_if: config_space.prog_if.read(),
+            revision_id: config_space.revision_id.read(),
+            config_space: frame,            
+        });
 
-        header
+        if function == 0 {
+            dev.vendor_id = vendor_id;
+            dev.device_id = device_id;            
+            dev.root_header_type = header_type;
+            // Check if it's a multi function device.
+            if header_type & 0x80 == 0 {                
+                break;
+            }
+        }
     }
+    // TODO: Find extra functions.
+
+    Some(dev)
 }
-
-
-

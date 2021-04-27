@@ -33,6 +33,7 @@ pic8259_simple = "0.2"
 rand_pcg = "0.3"
 volatile = "0.2"
 x86_64 = "0.14.0"
+acpi = "2.3.1"
 
 [dependencies.bootloader]
 version = "0.10.1"
@@ -67,6 +68,10 @@ optional = true
 
 [dependencies.lock_api]
 version = "0.4"
+default-features = false
+
+[dependencies.log]
+version = "0.4.14"
 default-features = false
 
 [dependencies.spin]
