@@ -24,7 +24,7 @@ use rand::{Rng, SeedableRng};
 use rand_pcg::Pcg64;
 use x86_64::VirtAddr;
 
-use dumb_os::{allocator::HEAP_SIZE, memory::print_memory, memory_manager::MemoryManager};
+use dumb_os::{allocator::HEAP_SIZE, memory_manager::MemoryManager};
 use dumb_os::memory::BootInfoBumpAllocator;
 use dumb_os::tasks::executor::Executor;
 use dumb_os::tasks::keyboard::print_keypresses;

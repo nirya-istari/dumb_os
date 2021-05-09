@@ -33,6 +33,7 @@ pub mod error;
 pub mod uart;
 pub mod acpi;
 pub mod memory_manager;
+pub mod pci;
 
 pub fn init() {
     io::stdio_init();    

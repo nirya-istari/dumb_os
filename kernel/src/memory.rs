@@ -45,7 +45,7 @@ pub fn create_example_mapping(
     mapping_result.expect("map_to failed").flush();
 }
 
-pub fn print_memory(physical_memory_offset: u64) {
+pub fn _print_memory(physical_memory_offset: u64) {
     // Print all the used non-leaf tables to serial.
     let page_table = unsafe { active_level_4_table(VirtAddr::new(physical_memory_offset)) };
 
@@ -169,4 +169,3 @@ unsafe impl FrameAllocator<Size4KiB> for BootInfoBumpAllocator {
     }
 }
 
-struct VirtualMemoryAllocator {}
